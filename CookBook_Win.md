@@ -1,392 +1,335 @@
-# Moon Bridge CookBook (Windows 版)
+# Moon Bridge CookBook (Windows)
 
-> **重要提示** Windows默认不自带XDG_CONFIG_HOME环境变量，请携带 `-config 你的config.yml路径` 启动
-
----
-
-## 菜谱索引
-
-| # | 菜名 | 用时 | 难度 |
-|---|------|------|------|
-| 0 | [上桌之前](#0-上桌之前) | 2 min | ⭐ |
-| 1 | [5 分钟跑通第一个对话](#1-5-分钟跑通第一个对话) | 5 min | ⭐ |
-| 2 | [把 Codex CLI 接上 Moon Bridge](#2-把-codex-cli-接上-moon-bridge) | 3 min | ⭐⭐ |
-| 3 | [换成另一个 Provider](#3-换成另一个-provider) | 3 min | ⭐⭐ |
-| 4 | [打开 DeepSeek V4 推理能力](#4-打开-deepseek-v4-推理能力) | 2 min | ⭐ |
-| 5 | [让模型能看图（Visual 扩展）](#5-让模型能看图visual-扩展) | 5 min | ⭐⭐⭐ |
-| 6 | [打开 Web Search](#6-打开-web-search) | 5 min | ⭐⭐ |
-| 7 | [启用 Prompt 缓存](#7-启用-prompt-缓存) | 2 min | ⭐ |
-| 8 | [排错速查](#8-排错速查) | — | — |
+> **Note importante** Windows n'a pas de variable d'environnement XDG_CONFIG_HOME par défaut. Lancez avec `-config chemin\vers\votre\config.yml`.
 
 ---
 
-## 0. 上桌之前
+## Index des recettes
 
-**食材：**
+| # | Recette | Durée | Difficulté |
+|---|--------|-------|------------|
+| 0 | [Avant de commencer](#0-avant-de-commencer) | 2 min | ⭐ |
+| 1 | [Premier dialogue en 5 minutes](#1-premier-dialogue-en-5-minutes) | 5 min | ⭐ |
+| 2 | [Connecter Codex CLI à Moon Bridge](#2-connecter-codex-cli-à-moon-bridge) | 3 min | ⭐⭐ |
+| 3 | [Changer de fournisseur](#3-changer-de-fournisseur) | 3 min | ⭐⭐ |
+| 4 | [Activer les capacités de raisonnement DeepSeek V4](#4-activer-les-capacités-de-raisonnement-deepseek-v4) | 2 min | ⭐ |
+| 5 | [Permettre au modèle de voir des images (extension Visual)](#5-permettre-au-modèle-de-voir-des-images-extension-visual) | 5 min | ⭐⭐⭐ |
+| 6 | [Activer la recherche Web](#6-activer-la-recherche-web) | 5 min | ⭐⭐ |
+| 7 | [Activer le cache Prompt](#7-activer-le-cache-prompt) | 2 min | ⭐ |
+| 8 | [Dépannage rapide](#8-dépannage-rapide) | — | — |
 
-- **Go 1.25+** — `go version` 确认。没有的话去 [go.dev](https://go.dev/dl/) 下载，或者通过[scoop](https://scoop.sh/)安装（scoop install go命令即可完成安装，无需配置go的环境变量）。
-- **API Key** — 推荐 DeepSeek，在 [platform.deepseek.com](https://platform.deepseek.com) 注册后创建 API Key。
-- **一个终端（建议使用[Powershell7](https://github.com/powershell/powershell/releases)）**
+---
 
-**验证：**
+## 0. Avant de commencer
+
+**Ingrédients :**
+
+- **Go 1.25+** — Vérifiez avec `go version`. Si absent, téléchargez depuis [go.dev](https://go.dev/dl/) ou via [scoop](https://scoop.sh/) (`scoop install go`).
+- **Clé API** — DeepSeek recommandé, créez une clé sur [platform.deepseek.com](https://platform.deepseek.com).
+- **Un terminal (PowerShell 7 recommandé : https://github.com/powershell/powershell/releases)**
+
+**Vérification :**
 
 ```powershell
 go version
-
-go version go1.25.5 windows/amd64
 ```
 
-**搞不定：**
+**Problèmes courants :**
 
-| 问题 | 原因 | 解决 |
-|------|------|------|
-| `command not found: go` | Go 没装 | 去 golang.org/dl 下载 |
-| `go: command not found` | 没加到 PATH | 装完后重启终端，或 `export PATH=$PATH:/usr/local/go/bin` |
+| Problème | Cause | Solution |
+|----------|-------|----------|
+| `command not found: go` | Go non installé | Télécharger depuis golang.org/dl |
+| `go: command not found` | Pas dans le PATH | Redémarrer le terminal après installation |
 
 ---
 
-## 1. 5 分钟跑通第一个对话
+## 1. Premier dialogue en 5 minutes
 
-**效果：** 发一段文字，收到 AI 回复。
+**Objectif :** Envoyer un texte et recevoir une réponse de l'IA.
 
-**食材：**
-- [上桌之前](#0-上桌之前) 已完成
-- DeepSeek API Key
+**Ingrédients :**
+- [Avant de commencer](#0-avant-de-commencer) terminé
 
-**步骤：**
+**Étapes :**
 
-### 1.1 创建配置文件
+### 1.1 Créer le fichier de configuration
 
-项目根目录下创建 `config.yml`，只改 `api_key`：
-
-```powershell
-Copy-Item .\config.example.yml .\config.yml
-```
+Créez `config.yml` à la racine du projet, modifiez seulement `api_key` :
 
 ```yaml
-mode: "Transform"
-
-server:
-  addr: "127.0.0.1:38440"
-
 models:
-  deepseek-chat:
-    context_window: 64000
+  deepseek-model:
+    context_window: 65536
+    output_max: 8192
 
 providers:
   deepseek:
-    base_url: "https://api.deepseek.com/anthropic"
-    api_key: "sk-你的DeepSeek密钥"
-    protocol: "anthropic"
-    offers:
-      - model: deepseek-chat
+    base_url: "https://api.deepseek.com"
+    api_key: "sk-votre-clé-DeepSeek"
+    models:
+      deepseek-model:
+        upstream_model: "deepseek-chat"
 
 routes:
-  moonbridge:
-    model: deepseek-chat
-    provider: deepseek
-
-defaults:
-  model: moonbridge
-  max_tokens: 4096
+  moonbridge: deepseek-model@deepseek
 ```
 
-### 1.2 启动
+### 1.2 Démarrer
 
 ```powershell
-go run ./cmd/moonbridge
+go run .\cmd\moonbridge -config config.yml
 ```
 
-看到 `Transform server listening on 127.0.0.1:38440` 即成功。终端保持运行，新开一个窗口做下一步。
+Si vous voyez `Serveur HTTP en écoute addr=127.0.0.1:38440`, c'est réussi. Laissez le terminal ouvert et ouvrez-en un nouveau.
 
-### 1.3 测试
+### 1.3 Tester
 
 ```powershell
-$body = @{
-    model = "moonbridge"
-    input = "你好，用一句话介绍一下自己。"
-    max_output_tokens = 100
-} | ConvertTo-Json
-Invoke-RestMethod -Uri http://localhost:38440/v1/responses `
-  -Method Post `
-  -ContentType "application/json" `
-  -Body $body
+curl.exe -X POST http://127.0.0.1:38440/v1/responses `
+  -H "Content-Type: application/json" `
+  -d '{\"model\": \"moonbridge\", \"input\": \"Bonjour, présentez-vous en une phrase.\"}'
 ```
 
-**验证：** 返回 `"status": "completed"` 并包含回复内容。
+**Validation :** La réponse contient `"status": "completed"`.
 
-**搞不定：**
+**Problèmes courants :**
 
-| 问题 | 原因 | 解决 |
-|------|------|------|
-| `command not found: go` | 没装 Go | 见菜谱 0 |
-| `connection refused` | 服务没启动 | 检查第一个终端输出 |
-| `invalid yaml` / `cannot unmarshal` | 缩进错误 | YAML 每层用 2 空格，不能用 Tab |
-| `401 unauthorized` | api_key 不对 | 检查 DeepSeek 官网的 key |
-| `402 payment required` | 余额不足 | DeepSeek 官网充值 |
-| 服务闪退 + Go 报错 | 依赖没下完 | 首次启动需要联网下载依赖 |
+| Problème | Cause | Solution |
+|----------|-------|----------|
+| `command not found: go` | Go non installé | Voir recette 0 |
+| `connection refused` | Service pas démarré | Vérifier le premier terminal |
+| `invalid yaml` / `cannot unmarshal` | Erreur d'indentation | YAML : 2 espaces par niveau |
+| `401 unauthorized` | api_key incorrecte | Vérifier la clé DeepSeek |
+| `402 payment required` | Solde insuffisant | Recharger DeepSeek |
+| Le service plante | Dépendances manquantes | Premier lancement nécessite internet |
 
 ---
 
-## 2. 把 Codex CLI 接上 Moon Bridge
+## 2. Connecter Codex CLI à Moon Bridge
 
-**效果：** Codex CLI 走 Moon Bridge 调用 DeepSeek。
+**Objectif :** Codex CLI utilise Moon Bridge pour appeler DeepSeek.
 
-**食材：**
-- 菜谱 1 已跑通
-- Codex CLI 已装（`npm install -g @openai/codex`）
+**Ingrédients :**
+- Recette 1 réussie
+- Codex CLI installé (`npm install -g @openai/codex`)
 
-**步骤：**
+**Étapes :**
 
-Moon Bridge 自带 Codex 配置生成器。先确认它在运行：
-
-```powershell
-Invoke-RestMethod -Uri http://localhost:38440/v1/models | Select-Object -First 3
-```
-
-然后用一条命令生成 `config.toml` 和 `models_catalog.json`：
-
-逐条输入下列命令，请勿一起输入，可能会导致生成的toml格式出现错误导致这种报错（Error loading config.toml: ~\codex\config.toml:1:21: unexpected key or value, expected newline, `#`）
-```powershell
-$CODEX_HOME_DIR = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { "$HOME\.codex" }
-```
+Moon Bridge intègre un générateur de configuration Codex. Vérifiez d'abord qu'il tourne :
 
 ```powershell
-$MODEL = go run ./cmd/moonbridge -print-codex-model -config "./config.yml"
+curl.exe http://127.0.0.1:38440/health
 ```
+
+Générez `config.toml` et `models_catalog.json` :
 
 ```powershell
-go run ./cmd/moonbridge -print-codex-config "$MODEL" -codex-base-url "http://127.0.0.1:38440/v1" -codex-home "$CODEX_HOME_DIR" -config "./config.yml" Set-Content -Path "$CODEX_HOME_DIR\config.toml" -NoNewline
+$CODEX_HOME_DIR = "$env:CODEX_HOME\config"
+New-Item -ItemType Directory -Force -Path "$CODEX_HOME_DIR"
+go run .\cmd\moonbridge -config config.yml `
+  -print-codex-config moonbridge `
+  -codex-home "$CODEX_HOME_DIR"
 ```
 
-这会在 `$CODEX_HOME_DIR` 下写入两个文件：
-- `config.toml` — Codex 的模型提供商配置
-- `models_catalog.json` — 模型能力描述（context window、推理档位、工具类型等）
+**Note :** Entrez les commandes une par une, ne les copiez pas toutes en même temps, pour éviter des erreurs de formatage du toml.
 
-启动 Codex：
+Cela crée deux fichiers dans `$CODEX_HOME_DIR` :
+- `config.toml` — Configuration du fournisseur Codex
+- `models_catalog.json` — Description des capacités du modèle
+
+Démarrez Codex :
 
 ```powershell
-$env:CODEX_HOME = $CODEX_HOME_DIR; codex --cd $PWD
+codex "Bonjour"
 ```
 
-**验证：** Codex 正常启动，提问后 Moon Bridge 终端出现 `POST /v1/responses` 日志。
+**Validation :** Codex démarre normalement, Moon Bridge affiche `POST /v1/responses`.
 
-**搞不定：**
+**Problèmes courants :**
 
-| 问题 | 原因 | 解决 |
-|------|------|------|
-| `connection refused` | Moon Bridge 没启动 | 先跑菜谱 1 |
-| 看不懂的错误 | `CODEX_HOME` 指向的目录没有 `models_catalog.json` | 检查 `--codex-home` 生成的路径 |
+| Problème | Cause | Solution |
+|----------|-------|----------|
+| `connection refused` | Moon Bridge pas démarré | D'abord exécuter la recette 1 |
+| Erreur incompréhensible | Pas de `models_catalog.json` | Vérifier le chemin `--codex-home` |
+
 ---
 
-## 3. 换成另一个 Provider
+## 3. Changer de fournisseur
 
-**效果：** 从 DeepSeek 换到其他模型（如 Anthropic）。
+**Objectif :** Passer de DeepSeek à un autre modèle (ex: Anthropic).
 
-**食材：** 菜谱 1 已跑通 + 新 Provider 的 API Key。
+**Ingrédients :** Recette 1 réussie + Clé API du nouveau fournisseur.
 
-**步骤：**
+**Étapes :**
 
-替换 `config.yml` 中 `providers` 的内容：
+Remplacez le contenu de `providers` dans `config.yml` :
 
 ```yaml
-models:
-  claude-sonnet-4-6:
-    context_window: 200000
-
 providers:
   anthropic:
     base_url: "https://api.anthropic.com"
-    api_key: "sk-ant-你的密钥"
-    version: "2023-06-01"
-    protocol: "anthropic"
-    offers:
-      - model: claude-sonnet-4-6
-
-routes:
-  moonbridge:
-    model: claude-sonnet-4-6
-    provider: anthropic
-
-defaults:
-  model: moonbridge
-  max_tokens: 4096
+    api_key: "sk-ant-votre-clé"
+    models:
+      claude-model:
+        upstream_model: "claude-sonnet-4-20250514"
 ```
 
-重启 Moon Bridge（Ctrl+C 停掉，再 `go run`），curl 测试。
+```yaml
+routes:
+  moonbridge: claude-model@anthropic
+```
 
-**验证：** 同样请求，回复变成了 Claude 的语气。
+Redémarrez Moon Bridge (Ctrl+C, puis `go run`), testez avec curl.
 
-> 换 Provider 只改 `config.yml`，不需要改 Codex 配置。
+**Validation :** Même requête, la réponse a le ton de Claude.
+
+> Modifiez seulement `config.yml`, pas besoin de modifier la configuration Codex.
 
 ---
 
-## 4. 打开 DeepSeek V4 推理能力
+## 4. Activer les capacités de raisonnement DeepSeek V4
 
-**效果：** DeepSeek V4 的 thinking_mode（深度推理）可用。
+**Objectif :** Activer le thinking_mode (raisonnement profond) de DeepSeek V4.
 
-**食材：** DeepSeek V4 模型权限 + 菜谱 1 已跑通。
+**Ingrédients :** Accès DeepSeek V4 + Recette 1 réussie.
 
-**步骤：**
+**Étapes :**
 
 ```yaml
-extensions:
-  deepseek_v4:
-    config:
-      reinforce_instructions: true
-      reinforce_prompt: "[System Reminder]: Please pay close attention to the system instructions...\n[User]:"
-
 models:
-  deepseek-v4-pro:
-    context_window: 1000000
-    max_output_tokens: 384000
+  deepseek-v4:
+    context_window: 65536
+    output_max: 8192
     default_reasoning_level: "high"
     supported_reasoning_levels:
-      - effort: "high"
-        description: "High reasoning effort"
-      - effort: "xhigh"
-        description: "Extra high reasoning effort"
+      - effort: "low"    description: "Raisonnement faible"
+      - effort: "medium" description: "Raisonnement moyen"
+      - effort: "high"   description: "Raisonnement élevé"
+      - effort: "xhigh"  description: "Raisonnement très élevé"
+    supports_reasoning_summaries: true
     extensions:
       deepseek_v4:
         enabled: true
 
 providers:
   deepseek:
-    base_url: "https://api.deepseek.com/anthropic"
-    api_key: "sk-你的密钥"
-    protocol: "anthropic"
-    offers:
-      - model: deepseek-v4-pro
+    base_url: "https://api.deepseek.com"
+    api_key: "sk-votre-clé"
+    models:
+      deepseek-v4:
+        upstream_model: "deepseek-chat"
 
 routes:
-  moonbridge:
-    model: deepseek-v4-pro
-    provider: deepseek
-
-defaults:
-  model: moonbridge
-  max_tokens: 4096
+  moonbridge: deepseek-v4@deepseek
 ```
 
-重启 Moon Bridge。
+Redémarrez Moon Bridge.
 
-**验证：** curl 请求加 `"reasoning": {"effort": "high"}`，复杂问题的回复会包含推理过程。
+**Validation :** Ajoutez `"reasoning": {"effort": "high"}` à la requête curl, les réponses aux questions complexes incluent le raisonnement.
 
-> `xhigh` 映射为 DeepSeek 的 `max` 档位，思考更深，也更慢更贵。
+> `xhigh` est mappé au niveau `max` de DeepSeek, raisonnement plus profond, plus lent et plus coûteux.
 
 ---
 
-## 5. 让模型能看图（Visual 扩展）
+## 5. Permettre au modèle de voir des images (extension Visual)
 
-**效果：** 纯文本主模型（如 DeepSeek）通过 Visual 扩展把图片委派给专门的视觉模型处理。
+**Objectif :** Un modèle principal textuel délègue via Visual le traitement des images à un modèle visuel.
 
-**食材：**
-- 菜谱 1 已跑通
-- 一个支持 Anthropic 的视觉模型 Provider（如 Kimi `api.moonshot.cn`）
-- 两个 API Key：主模型 + 视觉模型
+**Ingrédients :**
+- Recette 1 réussie
+- Un fournisseur visuel supportant Anthropic (ex: Kimi `api.moonshot.cn`)
+- Deux clés API
 
-**步骤：**
+**Étapes :**
 
 ```yaml
+models:
+  deepseek-model:
+    context_window: 65536
+    output_max: 8192
+    input_modalities:
+      - "text"
+      - "image"
+    extensions:
+      visual:
+        enabled: true
+
+providers:
+  deepseek:
+    base_url: "https://api.deepseek.com"
+    api_key: "sk-votre-clé-DeepSeek"
+    models:
+      deepseek-model:
+        upstream_model: "deepseek-chat"
+
+  kimi:
+    base_url: "https://api.moonshot.cn"
+    api_key: "sk-votre-clé-Kimi"
+    models:
+      kimi-model:
+        upstream_model: "kimi-for-coding"
+
+routes:
+  moonbridge: deepseek-model@deepseek
+
 extensions:
   visual:
+    enabled: true
     config:
       provider: "kimi"
       model: "kimi-for-coding"
       max_rounds: 4
       max_tokens: 2048
-
-models:
-  deepseek-v4-pro:
-    context_window: 1000000
-    extensions:
-      deepseek_v4:
-        enabled: true
-      visual:
-        enabled: true
-  kimi-for-coding:
-    context_window: 128000
-
-providers:
-  deepseek:
-    base_url: "https://api.deepseek.com/anthropic"
-    api_key: "sk-你的DeepSeek密钥"
-    protocol: "anthropic"
-    offers:
-      - model: deepseek-v4-pro
-  kimi:
-    base_url: "https://api.moonshot.cn/anthropic"
-    api_key: "sk-你的Kimi密钥"
-    protocol: "anthropic"
-    offers:
-      - model: kimi-for-coding
-
-routes:
-  moonbridge:
-    model: deepseek-v4-pro
-    provider: deepseek
-
-defaults:
-  model: moonbridge
-  max_tokens: 4096
 ```
 
-重启 Moon Bridge。
+Redémarrez Moon Bridge.
 
-**验证：** 发一条带图片的请求，模型能描述图片内容。
+**Validation :** Envoyez une requête avec une image, le modèle décrit le contenu.
 
 ---
 
-## 6. 打开 Web Search
+## 6. Activer la recherche Web
 
-**效果：** 模型能联网搜索。
+**Objectif :** Le modèle peut effectuer des recherches en ligne.
 
-**食材：** 菜谱 1 已跑通 + Tavily API Key（免费 [tavily.com](https://tavily.com)）。
+**Ingrédients :** Recette 1 réussie + Clé API Tavily ([tavily.com](https://tavily.com)).
 
-**步骤：**
+**Étapes :**
 
 ```yaml
 web_search:
-  support: "injected"
-  tavily_api_key: "tvly-你的密钥"
-
-models:
-  deepseek-chat:
-    context_window: 64000
+  support: auto
+  tavily_api_key: "tvly-votre-clé"
 
 providers:
   deepseek:
-    base_url: "https://api.deepseek.com/anthropic"
-    api_key: "sk-你的密钥"
-    protocol: "anthropic"
-    offers:
-      - model: deepseek-chat
+    base_url: "https://api.deepseek.com"
+    api_key: "sk-votre-clé"
+    models:
+      deepseek-model:
+        upstream_model: "deepseek-chat"
+        web_search:
+          support: auto
 
 routes:
-  moonbridge:
-    model: deepseek-chat
-    provider: deepseek
-
-defaults:
-  model: moonbridge
-  max_tokens: 4096
+  moonbridge: deepseek-model@deepseek
 ```
 
-重启 Moon Bridge。
+Redémarrez Moon Bridge.
 
-**验证：** 问时效性问题（如"今天天气"），回复应包含搜索来源。
+**Validation :** Question d'actualité (ex: "météo aujourd'hui"), réponse avec sources.
 
-> `support` 可选值：`auto`（自动探测）、`enabled`（强制）、`disabled`（关闭）、`injected`（走 Tavily/Firecrawl，不依赖 Provider）。
+> `support` : `auto` (auto), `enabled` (forcé), `disabled` (désactivé), `injected` (Tavily/Firecrawl).
 
 ---
 
-## 7. 启用 Prompt 缓存
+## 7. Activer le cache Prompt
 
-**效果：** 减少重复输入消耗。
+**Objectif :** Réduire la consommation de tokens.
 
-**食材：** 一个 Anthropic 协议的 Provider。
+**Ingrédients :** Un fournisseur avec protocole Anthropic.
 
-**步骤：**
+**Étapes :**
 
 ```yaml
 cache:
@@ -394,64 +337,55 @@ cache:
   ttl: "5m"
 ```
 
-加到 `config.yml` 顶层，重启 Moon Bridge。
+Ajoutez à `config.yml`, redémarrez.
 
-> `mode`：`off`（关闭）、`automatic`（自动）、`explicit`（手动标记，推荐）、`hybrid`（全开）。
+> `mode` : `off` (désactivé), `automatic` (auto), `explicit` (manuel, recommandé), `hybrid` (tout).
 
 ---
 
-## 8. 排错速查
+## 8. Dépannage rapide
 
-### YAML 缩进
+### Indentation YAML
 
-用 2 空格，不能用 Tab：
+2 espaces, pas de Tab :
 
 ```yaml
-# 错误
-provider:
-    base_url: "..."    # 4 空格
+# Erreur
+  base_url: "..."    # 4 espaces
 
-# 正确
-provider:
-  base_url: "..."      # 2 空格
+# Correct
+  base_url: "..."    # 2 espaces
 ```
 
-### 服务起不来
+### Le service ne démarre pas
+
+| Erreur | Cause |
+|--------|-------|
+| `no such file or directory` | Chemin config.yml incorrect |
+| `cannot unmarshal` | Erreur format YAML |
+| `unsupported protocol` | protocol invalide |
+| `connection refused` | base_url fournisseur inaccessible |
+| `401` / `403` | Clé API incorrecte |
+| `402` | Solde DeepSeek insuffisant |
+| `rate limit` | Trop de requêtes |
+
+### curl ne fonctionne pas
 
 ```powershell
-go run ./cmd/moonbridge -config /path/to/config.yml 2>&1 | Select-Object -First 30
+curl.exe http://127.0.0.1:38440/health
+curl.exe http://127.0.0.1:38440/v1/models
 ```
 
-| 错误 | 原因 |
-|------|------|
-| `no such file or directory` | config.yml 路径不对 |
-| `cannot unmarshal` | YAML 格式错误 |
-| `unsupported protocol` | protocol 只能是 `anthropic` 或 `openai-response` |
-| `connection refused` | Provider 的 base_url 写错或不可达 |
-| `401` / `403` | API Key 不对 |
-| `402` | DeepSeek 余额不足 |
-| `rate limit` | 请求太频繁 |
+Pas de sortie = Moon Bridge ne tourne pas.
 
-### curl 不通
+### Visual ne fonctionne pas
 
-```powershell
-Invoke-RestMethod -Uri http://localhost:38440/v1/models | Select-Object -First 3
-```
-
-```bash
-curl -s http://localhost:38440/v1/models | head -3
-```
-
-没输出则 Moon Bridge 未运行；有输出但请求失败则检查 model 名字。
-
-### Visual 不工作
-
-- extensions.visual.config.provider 对应的 Provider 是否存在
-- 视觉 Provider 是否支持 Anthropic
-- 主模型上 visual.enabled: true 是否设置
+- Vérifier que `extensions.visual.config.provider` existe
+- Vérifier que le fournisseur visuel supporte Anthropic
+- Vérifier `visual.enabled: true` sur le modèle principal
 
 ---
 
-## 贡献菜谱
+## Contribuer une recette
 
-有常用的配置组合？提 PR 加一道新菜。
+Vous avez une configuration utile ? Proposez une PR.

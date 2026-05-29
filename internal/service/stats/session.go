@@ -338,11 +338,11 @@ func FormatUsageLine(p UsageLineParams) string {
 	}
 	rwRatio := BillingCacheRWRatio(usage)
 	return fmt.Sprintf(
-		"模型: %s ➡️ %s\n"+
-			"输入: 读取 %s + 写入 %s + 首次 %s\n"+
-			"输出: %s\n"+
-			"计费: 本请求 %.4f 元, 累计 %.4f 元\n"+
-			"缓存: 命中率 %.2f%%, 写入率 %.2f%%, 读写比 %.2f",
+		"Modèle: %s ➡️ %s\n"+
+			"Entrée: lecture %s + écriture %s + première %s\n"+
+			"Sortie: %s\n"+
+			"Coût: cette requête %.4f ¥, cumulé %.4f ¥\n"+
+			"Cache: taux de hit %.2f%%, taux d'écriture %.2f%%, ratio R/W %.2f",
 		p.RequestModel, p.ActualModel,
 		FormatTokenCount(int64(usage.CacheReadInputTokens)),
 		FormatTokenCount(int64(usage.CacheCreationInputTokens)),
@@ -359,7 +359,7 @@ func FormatSummaryLine(s Summary) string {
 		rwRatio = float64(s.CacheRead) / float64(s.CacheCreation)
 	}
 	totalTokens := s.InputTokens + s.OutputTokens
-	return fmt.Sprintf("统计：缓存命中率 %.1f%%, 读写比 %.2f, 累计计费 %.2f 元, 总token %s",
+	return fmt.Sprintf("Stats: taux de hit cache %.1f%%, ratio R/W %.2f, coût cumulé %.2f ¥, tokens total %s",
 		s.CacheHitRate, rwRatio, s.TotalCost, FormatTokenCount(totalTokens))
 }
 
@@ -375,8 +375,8 @@ type ErrorLineParams struct {
 // Error logging now uses structured slog attrs.
 func FormatErrorLine(p ErrorLineParams) string {
 	return fmt.Sprintf(
-		"模型: %s ➡️ %s\n"+
-			"状态码: %d, 错误: %s",
+		"Modèle: %s ➡️ %s\n"+
+			"Code statut: %d, erreur: %s",
 		p.RequestModel, p.ActualModel,
 		p.StatusCode, p.Message,
 	)
@@ -386,19 +386,19 @@ func FormatErrorLine(p ErrorLineParams) string {
 func WriteSummary(w io.Writer, s Summary) {
 	var buf bytes.Buffer
 	fmt.Fprintln(&buf, FormatSummaryLine(s))
-	fmt.Fprintf(&buf, "会话统计: %d 次请求, 耗时 %s\n", s.Requests, s.Duration.Round(time.Second))
+	fmt.Fprintf(&buf, "Statistiques session: %d requêtes, durée %s\n", s.Requests, s.Duration.Round(time.Second))
 	freshInput := s.InputTokens - s.CacheCreation - s.CacheRead
 	if freshInput < 0 {
 		freshInput = 0
 	}
-	fmt.Fprintf(&buf, "  输入: %s (首次 %s, 缓存写入 %s, 缓存读取 %s)\n",
+	fmt.Fprintf(&buf, "  Entrée: %s (première %s, écriture cache %s, lecture cache %s)\n",
 		FormatTokenCount(s.InputTokens),
 		FormatTokenCount(freshInput),
 		FormatTokenCount(s.CacheCreation),
 		FormatTokenCount(s.CacheRead))
-	fmt.Fprintf(&buf, "  输出: %s\n", FormatTokenCount(s.OutputTokens))
+	fmt.Fprintf(&buf, "  Sortie: %s\n", FormatTokenCount(s.OutputTokens))
 	if s.CacheHitRate > 0 {
-		fmt.Fprintf(&buf, "  缓存命中率: %.1f%% (节省 %s)\n",
+		fmt.Fprintf(&buf, "  Taux de hit cache: %.1f%% (économisé %s)\n",
 			s.CacheHitRate, FormatTokenCount(s.EffectiveInputSaved))
 	}
 	rwRatio := float64(0)
@@ -406,12 +406,12 @@ func WriteSummary(w io.Writer, s Summary) {
 		rwRatio = float64(s.CacheRead) / float64(s.CacheCreation)
 	}
 	if rwRatio > 0 {
-		fmt.Fprintf(&buf, "  缓存读写比: %.2f\n", rwRatio)
+		fmt.Fprintf(&buf, "  Ratio R/W cache: %.2f\n", rwRatio)
 	}
-	fmt.Fprintf(&buf, "  累计费用: ¥%.6f\n", s.TotalCost)
+	fmt.Fprintf(&buf, "  Coût cumulé: ¥%.6f\n", s.TotalCost)
 	totalTokens := s.InputTokens + s.OutputTokens
 	if totalTokens > 0 {
-		fmt.Fprintf(&buf, "  全局平均成本: %s\n", FormatAvgCost(s.TotalCost, totalTokens))
+		fmt.Fprintf(&buf, "  Coût moyen global: %s\n", FormatAvgCost(s.TotalCost, totalTokens))
 	}
 	for model, ms := range s.ByModel {
 		displayName := model
@@ -428,7 +428,7 @@ func WriteSummary(w io.Writer, s Summary) {
 		}
 		if ms.Cost > 0 {
 			modelTokens := ms.InputTokens + ms.OutputTokens
-			fmt.Fprintf(&buf, "    %s: ¥%.6f (%d 次, %s 输入, %s 输出, %s)\n",
+			fmt.Fprintf(&buf, "    %s: ¥%.6f (%d requêtes, %s entrée, %s sortie, %s)\n",
 				displayName, ms.Cost, ms.Requests,
 				FormatTokenCount(ms.InputTokens),
 				FormatTokenCount(ms.OutputTokens),

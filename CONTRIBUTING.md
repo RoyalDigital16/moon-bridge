@@ -1,50 +1,50 @@
-# 贡献指南
+# Guide de contribution
 
-感谢您对 Moon Bridge 的关注！欢迎通过 Issue 和 Pull Request 参与贡献。
+Merci de votre intérêt pour Moon Bridge ! Les contributions via Issues et Pull Requests sont les bienvenues.
 
-## 报告问题
+## Signaler un problème
 
-- 使用 GitHub Issues 提交
-- 请包含：运行环境、配置（脱敏后）、复现步骤、预期行为与实际行为
-- 如果涉及 API 错误，请附上请求跟踪日志（启用 `trace.enabled: true`）
+- Utilisez GitHub Issues pour soumettre
+- Veuillez inclure : environnement d'exécution, configuration (après anonymisation), étapes de reproduction, comportement attendu et réel
+- Si le problème implique une erreur API, joignez les journaux de traçage des requêtes (activez `trace.enabled: true`)
 
-## 提交代码
+## Soumettre du code
 
-### 分支策略
+### Stratégie de branches
 
-- `main` — 稳定版本
-- `dev` — 开发分支，所有 PR 合入此分支
-- `fix/*` — 修复分支
-- `feat/*` — 功能分支
+- `main` — version stable
+- `dev` — branche de développement, toutes les PR sont fusionnées ici
+- `fix/*` — branches de correction
+- `feat/*` — branches de fonctionnalités
 
-### 开发流程
+### Processus de développement
 
-1. Fork 仓库并创建功能分支：`git checkout -b feat/my-feature`
-2. 编写代码并添加测试
-3. 运行全量测试：`go test ./...`
-4. 提交 PR 到 `dev` 分支
+1. Forkez le dépôt et créez une branche de fonctionnalité : `git checkout -b feat/my-feature`
+2. Écrivez le code et ajoutez des tests
+3. Exécutez tous les tests : `go test ./...`
+4. Soumettez une PR vers la branche `dev`
 
-### 代码规范
+### Conventions de code
 
-- 使用 `log/slog` 进行结构化日志
-- 文件名反映职责（如 `candidate_routing_test.go`），不使用项目管理编号
-- 协议转换统一使用 `format.CoreRequest` / `CoreResponse` 作为中间表示
-- 新增 Adapter 必须同时实现 `ProviderAdapter` 和 `ProviderStreamAdapter`
+- Utilisez `log/slog` pour la journalisation structurée
+- Les noms de fichiers reflètent leur responsabilité (ex: `candidate_routing_test.go`), sans numéro de gestion de projet
+- La conversion de protocole utilise `format.CoreRequest` / `CoreResponse` comme représentation intermédiaire
+- Tout nouvel adaptateur doit implémenter à la fois `ProviderAdapter` et `ProviderStreamAdapter`
 
-### 测试要求
+### Exigences de test
 
-- 单元测试覆盖新增代码
-- 协议转换应包含 E2E 测试（`internal/e2e/`）
-- 运行 `make test` 确保无回归
+- Les tests unitaires couvrent le nouveau code
+- La conversion de protocole doit inclure des tests E2E (`internal/e2e/`)
+- Exécutez `make test` pour garantir l'absence de régression
 
-## 添加新 Provider
+## Ajouter un nouveau fournisseur
 
-1. 在 `internal/config/config.go` 中添加协议常量（如 `ProtocolMyAdapter`）
-2. 创建 `internal/protocol/<adapter>/` 包，实现 `format.ProviderAdapter` 和 `format.ProviderStreamAdapter`
-3. 在 `internal/service/app/app.go` 中将 Adapter 注册到 `format.Registry`
-4. 在 `internal/service/server/adapter_dispatch.go` 中添加协议分发分支
-5. 添加 E2E 测试到 `internal/e2e/`
+1. Ajoutez une constante de protocole dans `internal/config/config.go` (ex: `ProtocolMyAdapter`)
+2. Créez le package `internal/protocol/<adapter>/` implémentant `format.ProviderAdapter` et `format.ProviderStreamAdapter`
+3. Enregistrez l'adaptateur dans le `format.Registry` via `internal/service/app/app.go`
+4. Ajoutez une branche de distribution du protocole dans `internal/service/server/adapter_dispatch.go`
+5. Ajoutez des tests E2E dans `internal/e2e/`
 
-## 许可证
+## Licence
 
-本项目采用 [GPL v3](LICENSE) 许可证。提交代码即表示您同意代码在此许可证下发布。
+Ce projet est sous licence [GPL v3](LICENSE). En soumettant du code, vous acceptez qu'il soit publié sous cette licence.

@@ -67,18 +67,18 @@ func AuthMiddleware(tokenProvider func() string, storeAvailable func() bool) fun
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if storeAvailable != nil && !storeAvailable() {
-				respondError(w, http.StatusServiceUnavailable, "store_unavailable", "配置存储不可用")
+				respondError(w, http.StatusServiceUnavailable, "store_unavailable", "Stockage de configuration indisponible")
 				return
 			}
 			token := tokenProvider()
 			if token != "" {
 				auth := r.Header.Get("Authorization")
 				if !strings.HasPrefix(auth, "Bearer ") {
-					respondError(w, http.StatusUnauthorized, "invalid_auth", "认证失败: 缺少 Authorization header")
+					respondError(w, http.StatusUnauthorized, "invalid_auth", "Échec d'authentification : en-tête Authorization manquant")
 					return
 				}
 				if strings.TrimSpace(auth[7:]) != token {
-					respondError(w, http.StatusUnauthorized, "invalid_auth", "认证失败: 无效的认证令牌")
+					respondError(w, http.StatusUnauthorized, "invalid_auth", "Échec d'authentification : jeton d'authentification invalide")
 					return
 				}
 			}

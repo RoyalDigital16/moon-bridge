@@ -44,8 +44,8 @@ func main() {
 	}
 
 	if cfg.AuthToken == "" && !isDevEnv() {
-		slog.Error("Worker 生产环境必须配置认证：请在 server.auth_token 中设置 Bearer token，" +
-			"或通过 wrangler secret put MOONBRIDGE_CONFIG 注入包含 auth_token 的配置")
+		slog.Error("L'environnement de production Worker doit être authentifié : définissez un jeton Bearer dans server.auth_token, " +
+			"ou injectez une configuration contenant auth_token via wrangler secret put MOONBRIDGE_CONFIG")
 		os.Exit(1)
 	}
 

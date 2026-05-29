@@ -1,60 +1,60 @@
-# Extension 系统
+# Système d'Extension
 
-Moon Bridge 的 Extension 系统基于能力接口（capability interfaces）的插件架构。插件通过实现 `Plugin` 基础接口和零个或多个能力接口来扩展桥接能力。
+Le système d'Extension de Moon Bridge est basé sur une architecture de plugins utilisant des interfaces de capacité (capability interfaces). Les plugins étendent les capacités du pont en implémentant l'interface de base `Plugin` et zéro ou plusieurs interfaces de capacité.
 
-## 核心接口
+## Interfaces principales
 
-### Plugin（基础接口）
+### Plugin (interface de base)
 
-所有插件必须实现 `plugin.Plugin` 接口：
+Tous les plugins doivent implémenter l'interface `plugin.Plugin` :
 
 ```go
 // internal/extension/plugin/plugin.go
 type Plugin interface {
-    Name() string                    // 唯一标识符（如 "deepseek_v4"）
-    Init(ctx PluginContext) error    // 初始化，接收配置
-    Shutdown() error                 // 关闭，释放资源
-    EnabledForModel(modelAlias string) bool  // 是否对指定模型启用
+    Name() string                    // Identifiant unique (ex: "deepseek_v4")
+    Init(ctx PluginContext) error    // Initialisation, reçoit la configuration
+    Shutdown() error                 // Arrêt, libère les ressources
+    EnabledForModel(modelAlias string) bool  // Actif pour le modèle spécifié
 }
 ```
 
 ```go
 type PluginContext struct {
-    Config    any           // 已按 extension config spec 解码的 typed config
-    AppConfig config.Config  // 全局配置（只读）
-    Logger    *slog.Logger   // 带插件名的 logger
+    Config    any           // Configuration typée décodée selon la spec d'extension config
+    AppConfig config.Config  // Configuration globale (lecture seule)
+    Logger    *slog.Logger   // Logger avec le nom du plugin
 }
 ```
 
-内置工具：`BasePlugin` 提供所有方法的 no-op 默认实现，插件只需覆盖需要的方法。
+Outil intégré : `BasePlugin` fournit des implémentations par défaut no-op pour toutes les méthodes, le plugin n'a qu'à surcharger celles nécessaires.
 
-### RequestContext 与 StreamContext
+### RequestContext et StreamContext
 
-插件能力方法的第一个参数通常是 `*RequestContext` 或 `*StreamContext`，定义在 `internal/extension/plugin/context.go`：
+Le premier paramètre des méthodes de capacité du plugin est généralement `*RequestContext` ou `*StreamContext`, définis dans `internal/extension/plugin/context.go` :
 
 ```go
 type RequestContext struct {
-    ModelAlias  string               // 模型别名（如 "moonbridge"）
-    SessionData map[string]any       // 跨请求会话数据，按插件名索引
-    Reasoning   map[string]any       // OpenAI reasoning 配置
-    WebSearch   WebSearchInfo        // 解析后的 Web Search 设置
+    ModelAlias  string               // Alias du modèle (ex: "moonbridge")
+    SessionData map[string]any       // Données de session inter-requêtes, indexées par nom de plugin
+    Reasoning   map[string]any       // Configuration OpenAI reasoning
+    WebSearch   WebSearchInfo        // Paramètres Web Search résolus
 }
 
 type StreamContext struct {
     RequestContext
-    StreamState any  // 该插件本次流的 per-stream 状态
+    StreamState any  // État per-stream de ce plugin pour ce flux
 }
 
 func (ctx *RequestContext) SessionState(pluginName string) any {
-    // 返回指定插件的会话状态
+    // Retourne l'état de session pour le plugin spécifié
 }
 ```
 
-会话数据的隔离由 `session.Session` 保证——不同的会话（由 `session_id` 或 `X-Codex-Window-Id` 头标识）使用不同的 `ExtensionData` 映射。
+L'isolation des données de session est garantie par `session.Session` — les sessions différentes (identifiées par `session_id` ou l'en-tête `X-Codex-Window-Id`) utilisent des mappages `ExtensionData` différents.
 
 ### ConfigSpecProvider
 
-插件通过 `ConfigSpecProvider` 声明自己的配置结构，支持跨作用域（全局/Provider/Model/Route）的配置：
+Le plugin déclare sa structure de configuration via `ConfigSpecProvider`, supportant la configuration multi-scope (global/Provider/Model/Route) :
 
 ```go
 type ConfigSpecProvider interface {
@@ -62,103 +62,103 @@ type ConfigSpecProvider interface {
 }
 ```
 
-### 能力接口（Capability Interfaces）
+### Interfaces de capacité (Capability Interfaces)
 
-插件可按需实现以下能力接口。`plugin.Registry` 在注册时通过类型断言自动检测，并在 `CorePluginHooks()` 方法中串联所有实现的插件。
+Les plugins peuvent implémenter les interfaces de capacité suivantes selon leurs besoins. `plugin.Registry` les détecte automatiquement par assertion de type lors de l'enregistrement et les chaîne dans la méthode `CorePluginHooks()`.
 
-#### 请求管道（Request Pipeline）
+#### Pipeline de requête (Request Pipeline)
 
-| 接口 | 方法 | 作用时机 |
-|------|------|----------|
-| `InputPreprocessor` | `PreprocessInput(ctx, raw) RawMessage` | 输入 JSON 反序列化之前 |
-| `MessageRewriter` | `RewriteMessages(ctx, messages) []CoreMessage` | 输入消息列表转换后 |
-| `RequestMutator` | `MutateRequest(ctx, req)` | CoreRequest 构建后、发送到 Provider Adapter 前 |
-| `ToolInjector` | `InjectTools(ctx) []CoreTool` | 工具转换时注入额外工具（返回 CoreTool 列表） |
+| Interface | Méthode | Moment d'intervention |
+|-----------|---------|-----------------------|
+| `InputPreprocessor` | `PreprocessInput(ctx, raw) RawMessage` | Avant la désérialisation JSON d'entrée |
+| `MessageRewriter` | `RewriteMessages(ctx, messages) []CoreMessage` | Après la transformation de la liste des messages |
+| `RequestMutator` | `MutateRequest(ctx, req)` | Après la construction de CoreRequest, avant envoi au Provider Adapter |
+| `ToolInjector` | `InjectTools(ctx) []CoreTool` | Injection d'outils supplémentaires lors de la conversion (retourne une liste CoreTool) |
 
-#### 提供商管道（Provider Pipeline）
+#### Pipeline fournisseur (Provider Pipeline)
 
-| 接口 | 方法 | 作用时机 |
-|------|------|----------|
-| `ProviderWrapper` | `WrapProvider(ctx, provider) any` | 包装上游 Provider 客户端 |
+| Interface | Méthode | Moment d'intervention |
+|-----------|---------|-----------------------|
+| `ProviderWrapper` | `WrapProvider(ctx, provider) any` | Encapsulation du client fournisseur amont |
 
-#### 响应管道（Response Pipeline）
+#### Pipeline de réponse (Response Pipeline)
 
-| 接口 | 方法 | 作用时机 |
-|------|------|----------|
-| `ContentFilter` | `FilterContent(ctx, block) bool` | 逐块检查响应内容块，返回 true 表示跳过该块 |
-| `ResponsePostProcessor` | `PostProcessResponse(ctx, resp)` | 最终 OpenAI Response 构建后 |
-| `ContentRememberer` | `RememberContent(ctx, content)` | 完整响应内容可用时（如流式完成） |
+| Interface | Méthode | Moment d'intervention |
+|-----------|---------|-----------------------|
+| `ContentFilter` | `FilterContent(ctx, block) bool` | Vérification bloc par bloc du contenu de la réponse, retourne true pour ignorer le bloc |
+| `ResponsePostProcessor` | `PostProcessResponse(ctx, resp)` | Après la construction finale de la réponse OpenAI |
+| `ContentRememberer` | `RememberContent(ctx, content)` | Quand le contenu complet de la réponse est disponible (ex. streaming terminé) |
 
-#### 流式管道（Streaming Pipeline）
+#### Pipeline streaming (Streaming Pipeline)
 
-| 接口 | 方法 | 作用时机 |
-|------|------|----------|
-| `StreamInterceptor` | `NewStreamState() any` | 创建 per-request 流状态 |
-| | `OnStreamEvent(ctx, event) (consumed, emit)` | 每个流事件，返回 consumed=true 则 bridge 跳过正常处理 |
-| | `OnStreamComplete(ctx, outputText)` | 流完成 |
+| Interface | Méthode | Moment d'intervention |
+|-----------|---------|-----------------------|
+| `StreamInterceptor` | `NewStreamState() any` | Crée un état de flux per-request |
+| | `OnStreamEvent(ctx, event) (consumed, emit)` | Chaque événement de flux ; si consumed=true, le bridge ignore le traitement normal |
+| | `OnStreamComplete(ctx, outputText)` | Flux terminé |
 
 ```go
 type StreamEvent struct {
     Type  string  // "block_start", "block_delta", "block_stop"
     Index int
-    Block *format.CoreContentBlock  // for block_start
-    Delta anthropic.StreamDelta     // for block_delta
+    Block *format.CoreContentBlock  // pour block_start
+    Delta anthropic.StreamDelta     // pour block_delta
 }
 ```
 
-#### 历史重建（History Reconstruction）
+#### Reconstruction d'historique (History Reconstruction)
 
-| 接口 | 方法 | 作用时机 |
-|------|------|----------|
-| `ThinkingPrepender` | `PrependThinkingForToolUse(messages, toolCallID, summary, state) []CoreMessage` | 工具调用前补充 thinking 块 |
-| | `PrependThinkingForAssistant(blocks, summary, state) []CoreContentBlock` | 助手消息前补充 thinking 块 |
-| `ReasoningExtractor` | `ExtractThinkingBlock(ctx, summary) (CoreContentBlock, bool)` | 从 reasoning summary 恢复 thinking 块 |
+| Interface | Méthode | Moment d'intervention |
+|-----------|---------|-----------------------|
+| `ThinkingPrepender` | `PrependThinkingForToolUse(messages, toolCallID, summary, state) []CoreMessage` | Ajoute un bloc thinking avant l'appel d'outil |
+| | `PrependThinkingForAssistant(blocks, summary, state) []CoreContentBlock` | Ajoute un bloc thinking avant le message assistant |
+| `ReasoningExtractor` | `ExtractThinkingBlock(ctx, summary) (CoreContentBlock, bool)` | Restaure un bloc thinking à partir d'un résumé reasoning |
 
-#### 错误处理
+#### Gestion des erreurs
 
-| 接口 | 方法 | 作用时机 |
-|------|------|----------|
-| `ErrorTransformer` | `TransformError(ctx, msg) string` | 上游错误消息转换 |
+| Interface | Méthode | Moment d'intervention |
+|-----------|---------|-----------------------|
+| `ErrorTransformer` | `TransformError(ctx, msg) string` | Transformation des messages d'erreur amont |
 
-#### 会话状态
+#### État de session
 
-| 接口 | 方法 | 作用时机 |
-|------|------|----------|
-| `SessionStateProvider` | `NewSessionState() any` | 新会话创建时 |
+| Interface | Méthode | Moment d'intervention |
+|-----------|---------|-----------------------|
+| `SessionStateProvider` | `NewSessionState() any` | Création d'une nouvelle session |
 
-#### 日志
+#### Journalisation
 
-| 接口 | 方法 | 作用时机 |
-|------|------|----------|
-| `LogConsumer` | `ConsumeLog(ctx, entries) []LogEntry` | 每条 slog 日志通过 consume pipeline 分发，可拦截、修改或抑制 |
+| Interface | Méthode | Moment d'intervention |
+|-----------|---------|-----------------------|
+| `LogConsumer` | `ConsumeLog(ctx, entries) []LogEntry` | Chaque journal slog est distribué via le pipeline consume, peut intercepter, modifier ou supprimer |
 
-#### 请求完成与 HTTP 路由
+#### Achèvement de requête et routage HTTP
 
-| 接口 | 方法 | 作用时机 |
-|------|------|----------|
-| `RequestCompletionHook` | `OnRequestCompleted(ctx, result)` | 每次请求完成后，接收模型、token、费用、状态和耗时 |
-| `RouteRegistrar` | `RegisterRoutes(register)` | Server 初始化时注册额外 HTTP handler |
+| Interface | Méthode | Moment d'intervention |
+|-----------|---------|-----------------------|
+| `RequestCompletionHook` | `OnRequestCompleted(ctx, result)` | Après chaque requête terminée, reçoit le modèle, tokens, coût, statut et durée |
+| `RouteRegistrar` | `RegisterRoutes(register)` | Enregistre des gestionnaires HTTP supplémentaires lors de l'initialisation du serveur |
 
-#### 持久化
+#### Persistance
 
-| 接口 | 方法 | 作用时机 |
-|------|------|----------|
-| `DBProvider` | `DBProvider() db.Provider` | 声明数据库后端，如 SQLite 或 D1 |
-| `DBConsumer` | `DBConsumer() db.Consumer` | 声明需要数据库的消费者，如 metrics |
+| Interface | Méthode | Moment d'intervention |
+|-----------|---------|-----------------------|
+| `DBProvider` | `DBProvider() db.Provider` | Déclare un backend de base de données, comme SQLite ou D1 |
+| `DBConsumer` | `DBConsumer() db.Consumer` | Déclare un besoin de base de données, comme metrics |
 
-#### Core 格式适配器接口（Adapter 路径）
+#### Interfaces adaptateur au format Core (chemin Adapter)
 
-以下接口专用于 Adapter 路径（从 OpenAI Response 转换到其他协议时），定义在 `internal/extension/plugin/capabilities.go`：
+Les interfaces suivantes sont dédiées au chemin Adapter (lors de la conversion d'une réponse OpenAI vers un autre protocole), définies dans `internal/extension/plugin/capabilities.go` :
 
-| 接口 | 方法 | 作用时机 |
-|------|------|----------|
-| `CoreRequestMutator` | `MutateCoreRequest(ctx, req)` | CoreRequest 构建后（标准 context.Context） |
-| `CoreContentFilter` | `FilterCoreContent(ctx, block) bool` | 过滤 Core 内容块 |
-| `CoreContentRememberer` | `RememberCoreContent(ctx, content)` | 记住 Core 内容块 |
+| Interface | Méthode | Moment d'intervention |
+|-----------|---------|-----------------------|
+| `CoreRequestMutator` | `MutateCoreRequest(ctx, req)` | Après la construction de CoreRequest (contexte standard) |
+| `CoreContentFilter` | `FilterCoreContent(ctx, block) bool` | Filtre les blocs de contenu Core |
+| `CoreContentRememberer` | `RememberCoreContent(ctx, content)` | Mémorise les blocs de contenu Core |
 
-## 注册表（Registry）
+## Registre (Registry)
 
-`plugin.Registry` 管理所有注册的插件，按能力类型分类存储。
+`plugin.Registry` gère tous les plugins enregistrés, stockés par type de capacité.
 
 ```go
 // internal/extension/plugin/registry.go
@@ -171,40 +171,40 @@ type Registry struct {
     dbConsumers        []DBConsumer
     requestCompletionHooks []RequestCompletionHook
     routeRegistrars    []RouteRegistrar
-    // ... 其他能力列表
+    // ... autres listes de capacités
 }
 ```
 
-### 注册流程
+### Processus d'enregistrement
 
 ```go
-// 1. 创建注册表
+// 1. Créer le registre
 registry := plugin.NewRegistry(logger.L())
 
-// 2. 注册插件（自动检测能力）
+// 2. Enregistrer les plugins (détection automatique des capacités)
 registry.Register(deepseekv4.NewPlugin())
 registry.Register(visual.NewPlugin())
 registry.Register(dbsqlite.NewPlugin())
 registry.Register(metrics.NewPlugin())
 
-// 3. 初始化（传递 AppConfig 和 typed extension 配置）
+// 3. Initialiser (transmet AppConfig et la configuration typée d'extension)
 if err := registry.InitAll(&cfg); err != nil {
-    // cfg.ExtensionConfig("deepseek_v4", "") → *deepseekv4.Config 解码
+    // cfg.ExtensionConfig("deepseek_v4", "") → décodage en *deepseekv4.Config
 }
 
-// 4. 构建 CorePluginHooks（串联所有插件能力）
+// 4. Construire CorePluginHooks (chaîne toutes les capacités des plugins)
 hooks := registry.CorePluginHooks()
-// 返回 format.CorePluginHooks 结构体，传给各 Adapter 使用
+// Retourne la structure format.CorePluginHooks, transmise à chaque Adapter
 
-// 5. 在应用关闭时清理
+// 5. Nettoyage à l'arrêt de l'application
 defer registry.ShutdownAll()
 ```
 
-`Registry.CorePluginHooks()` 方法（`registry.go:486`）遍历已注册的插件，对实现了 `CoreRequestMutator`、`CoreContentFilter`、`CoreContentRememberer` 接口的插件，依次串联成 `format.CorePluginHooks` 的对应字段。。
+La méthode `Registry.CorePluginHooks()` (`registry.go:486`) parcourt les plugins enregistrés et pour ceux qui implémentent `CoreRequestMutator`, `CoreContentFilter`, `CoreContentRememberer`, les chaîne séquentiellement dans les champs correspondants de `format.CorePluginHooks`.
 
-## 与 Adapter 的集成
+## Intégration avec l'Adapter
 
-Plugin 通过 `format.CorePluginHooks`（定义在 `internal/format/adapter.go`）与 Adapter 路径集成。这是一个函数结构体，`Registry.CorePluginHooks()` 自动构建：
+Le Plugin s'intègre avec le chemin Adapter via `format.CorePluginHooks` (défini dans `internal/format/adapter.go`). C'est une structure de fonctions, automatiquement construite par `Registry.CorePluginHooks()` :
 
 ```go
 type CorePluginHooks struct {
@@ -223,34 +223,34 @@ type CorePluginHooks struct {
 }
 
 func (hooks CorePluginHooks) WithDefaults() CorePluginHooks {
-    // 将所有 nil 函数替换为 no-op，确保安全调用
+    // Remplace toutes les fonctions nil par des no-op, garantit un appel sécurisé
 }
 ```
 
-Adapter 在转换过程中调用这些 hook：
+L'Adapter appelle ces hooks pendant la conversion :
 
 ```go
-// 在上游 Provider Adapter 中：
-a.hooks.MutateCoreRequest(ctx, req)  // 修改 CoreRequest
-a.hooks.RememberContent(ctx, content) // 记录响应内容
+// Dans l'Adapter fournisseur amont :
+a.hooks.MutateCoreRequest(ctx, req)  // Modifie CoreRequest
+a.hooks.RememberContent(ctx, content) // Enregistre le contenu de la réponse
 
-// 在 OpenAI Client Adapter 中：
-a.hooks.PreprocessInput(ctx, model, raw)      // 预处理输入
-a.hooks.PostProcessCoreResponse(ctx, resp)     // 后处理响应
+// Dans l'Adapter client OpenAI :
+a.hooks.PreprocessInput(ctx, model, raw)      // Prétraite l'entrée
+a.hooks.PostProcessCoreResponse(ctx, resp)     // Post-traite la réponse
 ```
 
-Server 层也会直接使用插件能力：
+La couche Serveur utilise également directement les capacités des plugins :
 
-- `LogConsumer`：通过 `logger.SetConsumeFunc()` 接入日志缓冲。
-- `DBProvider` / `DBConsumer`：由 `db.Registry` 初始化数据库并绑定消费者。
-- `RequestCompletionHook`：请求完成后由 `server.onRequestCompleted()` 触发。
-- `RouteRegistrar`：由 `server.registerPluginRoutes()` 挂到 `http.ServeMux`。
+- `LogConsumer` : connecté via `logger.SetConsumeFunc()` au tampon de journal.
+- `DBProvider` / `DBConsumer` : initialisé par `db.Registry` pour lier la base de données et les consommateurs.
+- `RequestCompletionHook` : déclenché par `server.onRequestCompleted()` après chaque requête.
+- `RouteRegistrar` : monté sur `http.ServeMux` par `server.registerPluginRoutes()`.
 
-内置扩展目录中的 `websearchinjected` 有插件接口实现，但当前运行路径中注入式搜索由 bridge/server 根据模型 resolved web search mode 直接调用 `websearch` / `websearchinjected` 的工具和 Provider 包装函数，不在 `BuiltinExtensions()` 中注册。
+Le module `websearchinjected` dans le répertoire des extensions intégrées a une implémentation d'interface plugin, mais dans le chemin d'exécution actuel, la recherche par injection est appelée directement par bridge/server selon le mode web search résolu du modèle, en utilisant les fonctions d'outil et d'encapsulation Provider de `websearch` / `websearchinjected`, sans être enregistrée dans `BuiltinExtensions()`.
 
-## 配置方式
+## Configuration
 
-在 `config.yml` 的 `extensions` 节配置扩展参数。扩展自己的参数放在 `config:`，启用状态放在对应 scope 的 `enabled` 中：
+Les paramètres d'extension sont configurés dans la section `extensions` de `config.yml`. Les paramètres propres à l'extension vont dans `config:`, l'état d'activation dans le champ `enabled` du scope correspondant :
 
 ```yaml
 extensions:
@@ -260,7 +260,7 @@ extensions:
       reinforce_prompt: "[System Reminder]: ...\n[User]:"
 ```
 
-插件通过 `ConfigSpecProvider` 声明自己的配置结构：
+Le plugin déclare sa structure de configuration via `ConfigSpecProvider` :
 
 ```go
 func (p *DSPlugin) ConfigSpecs() []config.ExtensionConfigSpec {
@@ -277,7 +277,7 @@ func (p *DSPlugin) ConfigSpecs() []config.ExtensionConfigSpec {
 }
 
 func (p *DSPlugin) Init(ctx plugin.PluginContext) error {
-    p.cfg = plugin.Config[Config](ctx)  // 从 PluginContext 解码
+    p.cfg = plugin.Config[Config](ctx)  // Décodage depuis PluginContext
     p.appCfg = ctx.AppConfig
     return nil
 }
@@ -287,9 +287,9 @@ func (p *DSPlugin) EnabledForModel(model string) bool {
 }
 ```
 
-## 实现 Demo
+## Démo d'implémentation
 
-### 最小化插件
+### Plugin minimal
 
 ```go
 package demo
@@ -320,16 +320,16 @@ func (p *DemoPlugin) Init(ctx plugin.PluginContext) error {
     if cfg != nil {
         p.prefix = cfg.Prefix
     }
-    ctx.Logger.Info("demo plugin initialized", "prefix", p.prefix)
+    ctx.Logger.Info("plugin demo initialisé", "prefix", p.prefix)
     return nil
 }
 
 func (p *DemoPlugin) EnabledForModel(model string) bool {
-    return true  // 对所有模型启用
+    return true  // Activé pour tous les modèles
 }
 ```
 
-### 带能力的插件
+### Plugin avec capacités
 
 ```go
 package demo
@@ -340,7 +340,7 @@ import (
     "moonbridge/internal/protocol/openai"
 )
 
-// 注入额外工具的插件
+// Plugin qui injecte des outils supplémentaires
 type SystemInjectionPlugin struct {
     plugin.BasePlugin
     systemMessage string
@@ -348,25 +348,25 @@ type SystemInjectionPlugin struct {
 
 func (p *SystemInjectionPlugin) Name() string { return "system_inject" }
 
-// --- RequestMutator (修改 CoreRequest) ---
+// --- RequestMutator (modifie CoreRequest) ---
 func (p *SystemInjectionPlugin) MutateRequest(ctx *plugin.RequestContext, req *format.CoreRequest) {
-    // 追加 system 指令
+    // Ajoute une instruction système
     req.System = append(req.System, format.CoreContentBlock{
         Type: "text",
         Text: p.systemMessage,
     })
 }
 
-// --- ToolInjector (注入额外工具) ---
+// --- ToolInjector (injecte des outils supplémentaires) ---
 func (p *SystemInjectionPlugin) InjectTools(ctx *plugin.RequestContext) []format.CoreTool {
     return []format.CoreTool{{
         Name:        "get_current_time",
-        Description: "Get the current system time",
+        Description: "Obtenir l'heure système actuelle",
         InputSchema: map[string]any{"type": "object"},
     }}
 }
 
-// 编译期接口断言
+// Assertion d'interface à la compilation
 var (
     _ plugin.Plugin           = (*SystemInjectionPlugin)(nil)
     _ plugin.ToolInjector     = (*SystemInjectionPlugin)(nil)
@@ -374,10 +374,10 @@ var (
 )
 ```
 
-### 注册 Demo 插件
+### Enregistrer le plugin de démo
 
 ```go
-// 在 service/app/app.go 的 runTransform() 中：
+// Dans runTransform() de service/app/app.go :
 registry.Register(demo.NewPlugin())
 if err := registry.InitAll(&cfg); err != nil {
     return fmt.Errorf("init plugins: %w", err)
@@ -385,4 +385,4 @@ if err := registry.InitAll(&cfg); err != nil {
 defer registry.ShutdownAll()
 ```
 
-之后通过 `registry.CorePluginHooks()` 自动构建 `format.CorePluginHooks` 供 Adapter 使用。
+Ensuite, `registry.CorePluginHooks()` construit automatiquement `format.CorePluginHooks` pour l'Adapter.

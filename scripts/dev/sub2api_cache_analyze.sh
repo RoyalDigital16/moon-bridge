@@ -27,7 +27,7 @@ jq -r '
 ] | @tsv
 ' | awk 'BEGIN {
   OFS="\t";
-  print "模型ID","总计Token数","输入Token数","缓存读取Token数","缓存写入Token数","输出Token数","模型费用","缓存命中率","缓存读写比"
+  print "ModeleID","TotalTokens","TokensEntree","TokensLectureCache","TokensEcritureCache","TokensSortie","CoutModele","TauxHitCache","RatioLECriture"
 }
 {
   ratio = ($9 == "" ? "N/A" : sprintf("%.2f", $9));

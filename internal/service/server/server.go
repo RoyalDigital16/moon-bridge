@@ -167,7 +167,7 @@ func (s *Server) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 			writer.Header().Set("Content-Type", "application/json")
 			writer.WriteHeader(http.StatusUnauthorized)
 			json.NewEncoder(writer).Encode(openai.ErrorResponse{Error: openai.ErrorObject{
-				Message: "未提供有效的认证令牌，请在 Authorization header 中使用 Bearer 方案",
+				Message: "Jeton d'authentification invalide, veuillez utiliser le schéma Bearer dans l'en-tête Authorization",
 				Type:    "authentication_error",
 				Code:    "invalid_auth",
 			}})
@@ -180,7 +180,7 @@ func (s *Server) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 func (s *Server) handleModels(writer http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodGet {
 		writeOpenAIError(writer, http.StatusMethodNotAllowed, openai.ErrorResponse{Error: openai.ErrorObject{
-			Message: "仅支持 GET 请求",
+			Message: "Seules les requêtes GET sont autorisées",
 			Type:    "invalid_request_error",
 			Code:    "method_not_allowed",
 		}})
@@ -379,14 +379,14 @@ func (s *Server) filterCandidatesByInput(candidates []provider.ProviderCandidate
 		meta, ok := pm.ModelMetaFor(c.UpstreamModel, c.ProviderKey)
 		if !ok || !hasModalityImage(meta.InputModalities) {
 			removedCount++
-			logger.L().Debug("过滤掉不支持图片的提供商候选", "provider", c.ProviderKey, "model", c.UpstreamModel)
+			logger.L().Debug("Filtrage des candidats fournisseurs ne supportant pas les images", "provider", c.ProviderKey, "model", c.UpstreamModel)
 			continue
 		}
 		filtered = append(filtered, c)
 	}
 	var reason string
 	if removedCount > 0 {
-		reason = fmt.Sprintf("请求包含图片输入，已过滤 %d 个不支持图片的提供商候选", removedCount)
+		reason = fmt.Sprintf("La requête contient des images, %d candidats fournisseurs ne supportant pas les images ont été filtrés", removedCount)
 	}
 	return filtered, reason
 }

@@ -1,422 +1,392 @@
-# 现有 Extension 一览
+# Aperçu des Extensions existantes
 
-## deepseek_v4（DeepSeek V4 扩展）
+## deepseek_v4 (Extension DeepSeek V4)
 
-用于使 DeepSeek V4 模型通过 Anthropic 兼容端点正常工作的扩展。DeepSeek V4 实现的是 Anthropic Messages API 的子集，但有一些独特的差异需要处理。
+Extension permettant aux modèles DeepSeek V4 de fonctionner correctement via un point d'accès compatible Anthropic. DeepSeek V4 implémente un sous-ensemble de l'API Anthropic Messages, avec quelques différences notables à gérer.
 
-**位置**：`internal/extension/deepseek_v4/`
+**Emplacement** : `internal/extension/deepseek_v4/`
 
-**文件清单**：
+**Fichiers** :
 
-| 文件 | 用途 |
-|------|------|
-| `plugin.go` | Plugin 实现，注册所有能力 |
-| `deepseek_v4.go` | 核心转换函数（reasoning_content 处理） |
-| `state.go` | thinking 缓存状态管理 |
+| Fichier | Rôle |
+|---------|------|
+| `plugin.go` | Implémentation du plugin, enregistre toutes les capacités |
+| `deepseek_v4.go` | Fonctions de conversion principales (gestion de reasoning_content) |
+| `state.go` | Gestion de l'état du cache thinking |
 
-**实现的能力**：
-
-```go
-// 编译期接口断言（plugin.go）
-var (
-    _ plugin.Plugin               = (*DSPlugin)(nil)
-    _ plugin.InputPreprocessor    = (*DSPlugin)(nil)
-    _ plugin.RequestMutator       = (*DSPlugin)(nil)
-    _ plugin.MessageRewriter      = (*DSPlugin)(nil)
-    _ plugin.ContentFilter        = (*DSPlugin)(nil)
-    _ plugin.ContentRememberer    = (*DSPlugin)(nil)
-    _ plugin.StreamInterceptor    = (*DSPlugin)(nil)
-    _ plugin.ErrorTransformer     = (*DSPlugin)(nil)
-    _ plugin.SessionStateProvider  = (*DSPlugin)(nil)
-    _ plugin.ThinkingPrepender    = (*DSPlugin)(nil)
-    _ plugin.ReasoningExtractor   = (*DSPlugin)(nil)
-)
-```
-
-**各能力详解**：
-
-### InputPreprocessor
-
-`PreprocessInput()` — 移除输入消息中的 `reasoning_content` 字段。DeepSeek 如果在输入消息中出现 `reasoning_content` 会返回 400 错误，因为该字段是输出专用字段。
-
-### RequestMutator
-
-`MutateRequest()` — 调用 `ToAnthropicRequest()` 对请求做 DeepSeek 适配：
-
-- 清空 `Temperature` 和 `TopP`（DeepSeek 可能拒绝拒绝这些参数）
-- 将 OpenAI `reasoning.effort` 映射到 Anthropic `output_config.effort`（`high` → `high`，`xhigh`/`max` → `max`）
-
-### MessageRewriter
-
-`RewriteMessages()` — 可选地向用户消息前注入强化指令（reinforce prompt），用于提醒模型遵守 system prompt 和 AGENTS.md。
-
-### ContentFilter + ContentRememberer + ThinkingPrepender + ReasoningExtractor
-
-这是 DeepSeek V4 扩展最核心的部分，解决 **thinking 历史重建**问题。
-
-**问题**：DeepSeek V4 下一次对话时，API 要求输入历史中包含上一次的 `thinking` 块（Anthropic 协议中 `type: "thinking"` 的 `ContentBlock`），否则返回错误。
-
-**Codex 的限制**：Codex 在 Conversations API 中只保留 `reasoning` summary（`OutputItem.Type: "reasoning"`），不保留完整的 thinking 文本。
-
-**解决方案**（四步走）：
-
-```
-1. 响应时（ContentFilter）→ 拦截 upstream 的 thinking 块，提取为 reasoning summary
-2. 记忆时（ContentRememberer）→ 将 thinking 块按 tool_call_id / text_hash 缓存到 SessionData
-3. 回放时（ThinkingPrepender + ReasoningExtractor）→ 在下一轮请求时：
-   a. 优先从 reasoning summary 恢复原始 thinking 块（Encode/DecodeThinkingSummary）
-   b. 回退到 SessionData 中按 tool_call_id 查找缓存的 thinking
-   c. 最后兜底插入空 thinking 块
-4. 持续学习（StreamInterceptor）→ 流式场景下同样捕获 thinking 并缓存
-```
-
-### StreamInterceptor
-
-流式场景下拦截 `thinking_delta` / `reasoning_content_delta` 事件，累积完整的 thinking 文本，在流结束时缓存到 session state。
-
-### ErrorTransformer
-
-处理 DeepSeek 特有的错误消息。将关于 "thinking mode" 的错误转换为更友好的人类可读消息。
-
-### SessionStateProvider
-
-创建 `*State` 实例，用于跨请求缓存 thinking 块。State 内部维护两个 LRU 映射：
-
-- `records`：按 `tool_use_id` 索引的 thinking 块（最多 1024 条）
-- `textRecords`：按助手文本 SHA256 索引的 thinking 块（最多 1024 条）
-
-### 启用方式
-
-在模型配置中设置 `extensions.deepseek_v4.enabled: true`：
-
-```yaml
-```
-
-或通过 routes 启用：
-
-```yaml
-    # routes 自动继承模型配置中的 deepseek_v4 extension 设置
-```
-
-插件的 `EnabledForModel` 函数通过 `Config.ExtensionEnabled("deepseek_v4", model)` 检查模型别名是否启用该 extension。
-
----
-
-## web_search_injected（注入式 Web Search 模块）
-
-当上游提供商不支持 Anthropic 原生 `web_search_20250305` server tool 时，Moon Bridge 可以改用"注入式"模式——将 `tavily_search` 和 `firecrawl_fetch` 作为 function-type tool 注入请求，由服务端自动执行搜索。
-
-**位置**：`internal/extension/websearchinjected/`
-
-当前运行路径中，它不是 `BuiltinExtensions()` 注册的独立内置插件；bridge/server 会根据模型 resolved web search mode 直接调用该模块的 `InjectTools()` 和 `WrapProvider()`。`plugin.go` 保留插件接口实现，主要用于模块边界和测试。
-
-**文件清单**：
-
-| 文件 | 用途 |
-|------|------|
-| `plugin.go` | Plugin 实现 |
-| `websearchinjected.go` | 核心工具函数 |
-
-**实现的能力**：
+**Capacités implémentées** :
 
 ```go
-var (
-    _ plugin.Plugin          = (*WSInjectedPlugin)(nil)
-    _ plugin.ToolInjector    = (*WSInjectedPlugin)(nil)
-    _ plugin.ProviderWrapper = (*WSInjectedPlugin)(nil)
-)
+var _ plugin.InputPreprocessor   = (*DSPlugin)(nil)
+var _ plugin.RequestMutator      = (*DSPlugin)(nil)
+var _ plugin.MessageRewriter     = (*DSPlugin)(nil)
+var _ plugin.ContentFilter       = (*DSPlugin)(nil)
+var _ plugin.ContentRememberer   = (*DSPlugin)(nil)
+var _ plugin.ThinkingPrepender   = (*DSPlugin)(nil)
+var _ plugin.ReasoningExtractor  = (*DSPlugin)(nil)
+var _ plugin.StreamInterceptor   = (*DSPlugin)(nil)
+var _ plugin.ErrorTransformer    = (*DSPlugin)(nil)
+var _ plugin.SessionStateProvider = (*DSPlugin)(nil)
+// Assertion d'interface à la compilation (plugin.go)
 ```
 
-### 工作流程
+**Détail des capacités** :
 
+`PreprocessInput()` — Supprime le champ `reasoning_content` des messages d'entrée. DeepSeek retourne une erreur 400 si `reasoning_content` apparaît dans les messages d'entrée, car ce champ est réservé à la sortie.
+
+`MutateRequest()` — Appelle `ToAnthropicRequest()` pour adapter la requête à DeepSeek :
+- Vide `Temperature` et `TopP` (DeepSeek peut refuser ces paramètres)
+- Mappe OpenAI `reasoning.effort` vers Anthropic `output_config.effort` (`high` → `high`, `xhigh`/`max` → `max`)
+
+`RewriteMessages()` — Injecte optionnellement des instructions renforcées (reinforce prompt) avant les messages utilisateur, pour rappeler au modèle de respecter le system prompt et AGENTS.md.
+
+**Reconstruction de l'historique thinking** :
+C'est la partie la plus essentielle de l'extension DeepSeek V4, résolvant le problème de **reconstruction de l'historique thinking**.
+
+**Problème** : Lors d'une conversation continue avec DeepSeek V4, l'API exige que l'historique d'entrée contienne les blocs `thinking` précédents (blocs `ContentBlock` de type `"thinking"` dans le protocole Anthropic), sinon une erreur est retournée.
+
+**Limitation de Codex** : Codex ne conserve dans l'API Conversations que le résumé `reasoning` (`OutputItem.Type: "reasoning"`), pas le texte thinking complet.
+
+**Solution** (en quatre étapes) :
+1. Lors de la réponse (ContentFilter) → Intercepte les blocs thinking amont, les extrait comme résumé reasoning
+2. Lors de la mémorisation (ContentRememberer) → Met en cache les blocs thinking dans SessionData par tool_call_id / text_hash
+3. Lors du rejeu (ThinkingPrepender + ReasoningExtractor) → À la requête suivante :
+   a. Tente d'abord de restaurer le bloc thinking original depuis le résumé reasoning (Encode/DecodeThinkingSummary)
+   b. Sinon, cherche le thinking mis en cache dans SessionData par tool_call_id
+   c. En dernier recours, insère un bloc thinking vide
+4. Apprentissage continu (StreamInterceptor) → Capture également le thinking en mode streaming et le met en cache
+
+**StreamInterceptor** :
+Intercepte les événements `thinking_delta` / `reasoning_content_delta` en streaming, accumule le texte thinking complet, et le met en cache dans l'état de session à la fin du flux.
+
+**ErrorTransformer** :
+Traite les messages d'erreur spécifiques à DeepSeek. Convertit les erreurs concernant le "thinking mode" en messages plus lisibles.
+
+**SessionStateProvider** :
+Crée une instance `*State` pour le cache inter-requêtes des blocs thinking. L'état maintient deux mappages LRU :
+- `records` : blocs thinking indexés par `tool_use_id` (max 1024 entrées)
+- `textRecords` : blocs thinking indexés par SHA256 du texte assistant (max 1024 entrées)
+
+### Activation
+
+Dans la configuration du modèle, définissez `extensions.deepseek_v4.enabled: true` :
+
+```yaml
+models:
+  my-model:
+    extensions:
+      deepseek_v4:
+        enabled: true
 ```
-1. Codex 请求中包含 web_search_preview tool
-2. Bridge 检查模型 Web Search 模式 → "injected"
-3. Bridge 调用 `websearch.Tools()` / `websearchinjected.InjectTools()` 注入：
-   - tavily_search（function tool）
-   - firecrawl_fetch（function tool，如果配置了 Firecrawl key）
-4. Server 的 `maybeWrapProvider()` 在 resolved mode 为 `injected` 时调用 `websearchinjected.WrapProvider()` 将上游 Client 包装为 Orchestrator
-5. 请求发送后：
-   a. 如果上游返回工具调用（tavily_search/firecrawl_fetch）
-   b. Orchestrator 自动执行 Tavily 搜索或 Firecrawl 抓取
-   c. 将结果作为 tool_result 追加到下一轮请求
-   d. 反复直到模型满意或达到最大轮次
+
+Ou via les routes :
+
+```yaml
+routes:
+  my-alias:
+    model: my-model
+    provider: my-provider
+    # les routes héritent automatiquement des paramètres deepseek_v4 de la configuration du modèle
 ```
 
-### Orchestrator
+La fonction `EnabledForModel` du plugin vérifie via `Config.ExtensionEnabled("deepseek_v4", model)` si l'alias du modèle active cette extension.
 
-`websearch.NewInjectedOrchestrator()` 创建一个搜索编排器，包装 `*anthropic.Client`，暴露相同的 `CreateMessage` / `StreamMessage` 接口。编器在内部以循环方式执行搜索工具，直到模型不再请求搜索或达到 `SearchMaxRounds`。
+## web_search_injected (Module Web Search injecté)
 
-### 配置方式
+Quand le fournisseur amont ne supporte pas le server tool natif Anthropic `web_search_20250305`, Moon Bridge peut utiliser le mode "injecté" — les outils `tavily_search` et `firecrawl_fetch` sont injectés comme des function-type tools dans la requête, et le serveur exécute automatiquement la recherche.
+
+**Emplacement** : `internal/extension/websearchinjected/`
+
+Dans le chemin d'exécution actuel, ce n'est pas un plugin interne indépendant enregistré par `BuiltinExtensions()` ; bridge/server appelle directement `InjectTools()` et `WrapProvider()` de ce module selon le mode web search résolu du modèle. `plugin.go` conserve une implémentation d'interface plugin, principalement pour les limites du module et les tests.
+
+**Fichiers** :
+
+| Fichier | Rôle |
+|---------|------|
+| `plugin.go` | Implémentation du plugin |
+| `websearchinjected.go` | Fonctions d'outil principales |
+
+**Capacités implémentées** :
+
+```go
+var _ plugin.ToolInjector     = (*Plugin)(nil)
+var _ plugin.ProviderWrapper  = (*Plugin)(nil)
+```
+
+### Flux de travail
+
+1. La requête Codex contient l'outil `web_search_preview`
+2. Bridge vérifie le mode Web Search du modèle → "injected"
+3. Bridge appelle `websearch.Tools()` / `websearchinjected.InjectTools()` pour injecter :
+   - tavily_search (function tool)
+   - firecrawl_fetch (function tool, si une clé Firecrawl est configurée)
+4. Le `maybeWrapProvider()` du serveur, quand le mode résolu est `injected`, appelle `websearchinjected.WrapProvider()` pour encapsuler le client amont en Orchestrator
+5. Après l'envoi de la requête :
+   a. Si l'amont retourne des appels d'outils (tavily_search/firecrawl_fetch)
+   b. L'Orchestrator exécute automatiquement la recherche Tavily ou le crawlage Firecrawl
+   c. Les résultats sont ajoutés comme tool_result à la requête suivante
+   d. Le processus se répète jusqu'à ce que le modèle soit satisfait ou que le nombre maximum de tours soit atteint
+
+`websearch.NewInjectedOrchestrator()` crée un orchestrateur de recherche qui encapsule `*anthropic.Client` et expose les mêmes interfaces `CreateMessage` / `StreamMessage`. L'orchestrateur exécute les outils de recherche en boucle jusqu'à ce que le modèle n'en demande plus ou que `SearchMaxRounds` soit atteint.
+
+### Configuration
 
 ```yaml
 providers:
   my-provider:
-    base_url: "https://..."
-    api_key: "..."
     web_search:
-      support: "injected"
+      support: injected
       tavily_api_key: "tvly-..."
       firecrawl_api_key: "fc-..."
-      search_max_rounds: 5
+      search_max_rounds: 3
 ```
 
-或全局配置：
+Ou globalement :
 
 ```yaml
 web_search:
-  support: "injected"
+  support: injected
   tavily_api_key: "tvly-..."
   firecrawl_api_key: "fc-..."
-  search_max_rounds: 5
+  search_max_rounds: 3
 ```
 
-模型级别覆盖：
-
-```yaml
-```
-
-## kimi_workaround（Kimi 模型 Tool Call 轮次限制）
-
-Kimi 模型在工具调用场景下有时会陷入无限信息收集循环。`kimi_workaround` 插件通过注入进度提示和限制提示，在接近最大 tool call 轮次时提醒模型尽快总结并停止调用工具。
-
-**位置**：`internal/extension/kimi_workaround/`
-
-**文件清单**：
-
-| 文件 | 用途 |
-|------|------|
-| `plugin.go` | Plugin 实现，注册所有能力 |
-
-**实现的能力**：
-
-- `InputPreprocessor` — 预处理输入消息
-- `ContentFilter` — 过滤响应内容
-- `ContentRememberer` — 记忆内容块用于轮次跟踪
-- `StreamInterceptor` — 流事件拦截与轮次跟踪
-- `SessionStateProvider` — 提供跨请求的轮次状态
-
-### 启用方式
-
-在模型配置中设置 `extensions.kimi_workaround.enabled: true`：
+Surcharge au niveau du modèle :
 
 ```yaml
 models:
-  my-kimi-model:
+  my-model:
+    web_search:
+      support: auto   # auto / enabled / disabled / injected
+```
+
+## kimi_workaround (Limitation des tours d'appels d'outils Kimi)
+
+Les modèles Kimi peuvent parfois tomber dans une boucle infinie de collecte d'informations lors des appels d'outils. Le plugin `kimi_workaround` injecte des indicateurs de progression et des limites pour rappeler au modèle de résumer et d'arrêter les appels d'outils lorsqu'il approche du nombre maximal de tours.
+
+**Emplacement** : `internal/extension/kimi_workaround/`
+
+**Fichiers** :
+
+| Fichier | Rôle |
+|---------|------|
+| `plugin.go` | Implémentation du plugin, enregistre toutes les capacités |
+
+**Capacités implémentées** :
+- `InputPreprocessor` — Prétraite les messages d'entrée
+- `ContentFilter` — Filtre le contenu de la réponse
+- `ContentRememberer` — Mémorise les blocs de contenu pour le suivi des tours
+- `StreamInterceptor` — Interception des événements de flux et suivi des tours
+- `SessionStateProvider` — Fournit l'état des tours entre les requêtes
+
+### Activation
+
+Dans la configuration du modèle, définissez `extensions.kimi_workaround.enabled: true` :
+
+```yaml
+extensions:
+  kimi_workaround:
+    enabled: true
+    config:
+      max_rounds: 8
+      warn_rounds: 5
+      warn_message: "Progression : tour %d/%d. Veuillez résumer et terminer dès que possible."
+      limit_message: "Limite de tours atteinte (%d). Veuillez conclure avec les informations actuelles."
+```
+
+Configuration globale :
+
+```yaml
+extensions:
+  kimi_workaround:
+    enabled: true
+    config:
+      max_rounds: 10
+```
+
+Les modèles peuvent surcharger avec :
+
+```yaml
+models:
+  my-model:
     extensions:
       kimi_workaround:
         enabled: true
 ```
 
-全局配置：
+## codex (Kit de compatibilité Codex)
 
-```yaml
-extensions:
-  kimi_workaround:
-    config:
-      max_tool_rounds: 50
-      convergence_margin: 0.8
-```
+Bien qu'il ne s'agisse pas d'un plugin au sens traditionnel, `internal/extension/codex/` est une partie importante du système d'Extension.
 
+**Emplacement** : `internal/extension/codex/`
 
+**Fichiers** :
 
----
+| Fichier | Rôle |
+|---------|------|
+| `catalog.go` | Génération du catalogue de modèles DTO, génération de config.toml Codex |
+| `default_instructions.go` | Modèle d'instructions par défaut (intègre default_instructions.txt) |
 
-## codex（Codex 兼容性工具包）
+### Responsabilités principales
 
-虽然不是传统意义上的 Plugin，但 `internal/extension/codex/` 是 Extension 系统的重要部分。
+1. **Catalogue de modèles** : Génère `models_catalog.json` et `config.toml` utilisables par Codex CLI à partir de la configuration
+2. **Injection d'instructions par défaut** : Fournit des instructions système par défaut adaptées à Codex pour les modèles
 
-**位置**：`internal/extension/codex/`
+### Intégration CLI
 
-**文件清单**：
-
-| 文件 | 用途 |
-|------|------|
-| `catalog.go` | 模型目录 DTO 生成、Codex config.toml 生成 |
-| `default_instructions.go` | 默认模型指令模板（嵌入 default_instructions.txt） |
-
-### 核心职责
-
-1. **模型目录**：从配置生成 Codex CLI 可用的 `models_catalog.json` 和 `config.toml`
-2. **默认指令注入**：为模型提供 Codex 适配的默认系统指令
-
-### CLI 集成
-
-通过 moonbridge 命令行生成 Codex 配置：
+Génération de configuration Codex via la ligne de commande moonbridge :
 
 ```bash
-moonbridge -config config.yml -print-codex-config my-model
+# Générer le catalogue de modèles et config.toml
+moonbridge -print-codex-config my-model
+
+# Générer dans un répertoire spécifique
+moonbridge -print-codex-config my-model -codex-home ~/codex
 ```
 
----
+## visual (Extension visuelle)
 
-## visual（视觉扩展）
+Quand le modèle principal n'a pas de capacités visuelles multimodales, Moon Bridge peut déléguer l'analyse d'images à un fournisseur visuel dédié. L'extension `visual` fonctionne comme un plugin `ToolInjector`, injectant les outils `visual_brief` et `visual_qa` dans la conversation du modèle principal ; la couche Serveur encapsule le fournisseur amont en `CoreProvider` via `wrapWithVisual()`, interceptant les appels d'outils visuels au niveau Core et les déléguant au fournisseur visuel configuré.
 
+**Emplacement** : `internal/extension/visual/`
 
-当主模型本身不具备多模态视觉能力时，Moon Bridge 可以将图片分析任务委派给一个专门的视觉 Provider。`visual` 扩展作为 `ToolInjector` 插件工作，在主模型的对话中注入 `visual_brief` 和 `visual_qa` 两个工具；Server 层通过 `wrapWithVisual()` 将上游 Provider 包装为 `CoreProvider`，在 Core 层拦截视觉工具调用并委派给配置的视觉 Provider。
+**Fichiers** :
 
-**位置**：`internal/extension/visual/`
+| Fichier | Rôle |
+|---------|------|
+| `plugin.go` | Implémentation du plugin, injecte les outils `visual_brief` / `visual_qa`, expose ConfigForModel |
+| `orchestrator.go` | Orchestrateur visuel (ancien mode d'encapsulation du Provider Anthropic) |
+| `core_orchestrator.go` | Orchestrateur au niveau Core (actuellement utilisé) |
+| `client.go` | Définition de l'interface CoreProvider et implémentation BridgeClient |
+| `tools.go` | Définition des outils et génération de schémas |
+| `types.go` | Définitions de types |
+| `legacy.go` | Code legacy |
 
-**文件清单**：
-
-| 文件 | 用途 |
-|------|------|
-| `plugin.go` | Plugin 实现，注入 `visual_brief` / `visual_qa` 工具，暴露 ConfigForModel |
-| `orchestrator.go` | 视觉编排器（旧 Anthropic Provider 包装模式） |
-| `core_orchestrator.go` | Core 层编排器（当前使用） |
-| `client.go` | CoreProvider 接口定义及 BridgeClient 实现 |
-| `tools.go` | 工具定义和 schema 生成 |
-| `types.go` | 类型定义 |
-| `legacy.go` | 遗留代码 |
-
-**实现的能力**：
+**Capacités implémentées** :
 
 ```go
-var (
-    _ plugin.Plugin       = (*Plugin)(nil)
-    _ plugin.ToolInjector = (*Plugin)(nil)
-)
+var _ plugin.ToolInjector        = (*VisualPlugin)(nil)
+var _ plugin.ConfigSpecProvider  = (*VisualPlugin)(nil)
 ```
 
-### 工作流程
+### Flux de travail
 
-1. 请求到达 Server，Visual orchestrator 包装上游 Provider
-2. Orchestrator 扫描请求消息中的 Anthropic image block，将其替换为 `Image #1`、`Image #2` 等文本占位符
-3. 主模型处理请求，可选择调用 `visual_brief` / `visual_qa` 工具
-4. Orchestrator 拦截工具调用：
-   - 提取工具参数中的 `image_refs` 和 `image_urls`
-   - 从之前保存的 `availableImages` 中匹配对应图片
-   - 通过 `VisionClient.Analyze()` 发送给视觉 Provider
-   - 视觉 Provider 返回分析结果
-5. 将分析结果作为 `tool_result` 返回给主模型
-6. 主模型可以使用分析结果继续推理，或再次调用 `visual_qa` 做进一步追问
+1. La requête arrive au serveur, l'orchestrateur visuel encapsule le fournisseur amont
+2. L'orchestrateur analyse les messages de la requête à la recherche de blocs image Anthropic, les remplace par des placeholders texte `Image #1`, `Image #2`, etc.
+3. Le modèle principal traite la requête, peut appeler les outils `visual_brief` / `visual_qa`
+4. L'orchestrateur intercepte les appels d'outils :
+   - Extrait les `image_refs` et `image_urls` des paramètres d'outil
+   - Associe les images correspondantes depuis `availableImages` précédemment sauvegardé
+   - Envoie au fournisseur visuel via `VisionClient.Analyze()`
+   - Le fournisseur visuel retourne les résultats d'analyse
+5. Les résultats d'analyse sont retournés comme `tool_result` au modèle principal
+6. Le modèle principal peut utiliser les résultats pour continuer le raisonnement, ou rappeler `visual_qa` pour des questions supplémentaires
 
-### 视觉 Provider
+### Fournisseur visuel
 
-视觉分析通过 `VisionClient` 接口执行。内置的 `BridgeClient` 实现使用一个独立的 Anthropic 兼容 Provider 来发送图片分析请求，这意味着你可以用任意支持多模态的 Provider（如 Kimi、GPT-4o 等）作为视觉后端。
+L'analyse visuelle est exécutée via l'interface `VisionClient`. L'implémentation intégrée `BridgeClient` utilise un fournisseur compatible Anthropic indépendant pour envoyer les requêtes d'analyse d'images. Vous pouvez utiliser n'importe quel fournisseur supportant le multimodal (Kimi, GPT-4o, etc.) comme backend visuel.
 
 ```go
 type VisionClient interface {
-    Analyze(context.Context, AnalysisRequest) (string, error)
+    Analyze(ctx context.Context, req *VisionRequest) (*VisionResponse, error)
 }
 ```
 
-### 配置
+### Configuration
 
 ```yaml
 extensions:
   visual:
+    enabled: true
     config:
-      provider: "visual-backend"
-      model: "kimi-vision-model"
-      max_tokens: 4096
-
-models:
-  my-model:
-    extensions:
-      visual:
-        enabled: true
+      provider: "kimi"           # Clé du fournisseur visuel
+      model: "kimi-for-coding"    # Modèle visuel
+      max_rounds: 4               # Nombre max de tours de questions visuelles
+      max_tokens: 2048            # Max tokens pour la réponse visuelle
 ```
 
-### 与 Provider 的交互
+### Interaction avec le fournisseur
 
-Visual orchestrator 在 Core 层工作——通过 `wrapWithVisual()`（定义在 `internal/service/server/adapter_dispatch.go`）将上游 Provider 包装为 `CoreProvider`，对 Core format 的请求/响应进行拦截。当主模型不支持图片而调用视觉工具时，orchestrator 自动将图片请求发送到配置的视觉 Provider 并返回分析结果。
+L'orchestrateur visuel travaille au niveau Core — via `wrapWithVisual()` (défini dans `internal/service/server/adapter_dispatch.go`), il encapsule le fournisseur amont en `CoreProvider`, interceptant les requêtes/réponses au format Core. Quand le modèle principal ne supporte pas les images et appelle les outils visuels, l'orchestrateur envoie automatiquement la requête d'image au fournisseur visuel configuré et retourne les résultats d'analyse.
 
----
+## En développement : db_sqlite (Provider de persistance SQLite)
 
-## 开发中：db_sqlite（SQLite 持久化 Provider）
+Extension de backend de base de données pour les processus locaux. Cette capacité provient du travail de persistance de la branche dev, actuellement considérée comme une capacité en développement, pas une interface publique stable.
 
-本地进程使用的数据库后端扩展。该能力来自 dev 分支的持久化工作，当前按开发中能力记录，不视为稳定公开接口。
+**Emplacement** : `internal/extension/db/sqlite/`
 
-**位置**：`internal/extension/db/sqlite/`
-
-**实现的能力**：
+**Capacités implémentées** :
 
 ```go
-var (
-    _ plugin.Plugin             = (*Plugin)(nil)
-    _ plugin.ConfigSpecProvider = (*Plugin)(nil)
-    _ plugin.DBProvider         = (*Plugin)(nil)
-)
+var _ plugin.DBProvider            = (*Plugin)(nil)
+var _ plugin.ConfigSpecProvider    = (*Plugin)(nil)
 ```
 
-配置示例：
+Exemple de configuration :
 
 ```yaml
 extensions:
   db_sqlite:
     enabled: true
     config:
-      path: ./data/moonbridge.db
-      wal: true
-      busy_timeout_ms: 5000
-      max_open_conns: 1
+      path: ./data/moonbridge.db  # Chemin du fichier SQLite
+      wal: true                   # Activer WAL
+      busy_timeout_ms: 5000       # Timeout de busy
+      max_open_conns: 1           # Connexions max
 ```
 
-当 `path` 为空或 `enabled: false` 时不会提供数据库。默认启用 WAL，默认 busy timeout 为 5000 ms，默认最大连接数为 1。
+Quand `path` est vide ou `enabled: false`, la base de données n'est pas fournie. WAL activé par défaut, busy timeout par défaut 5000 ms, max connexions par défaut 1.
 
----
+## En développement : db_d1 (Provider de persistance Cloudflare D1)
 
-## 开发中：db_d1（Cloudflare D1 持久化 Provider）
+Extension de backend de base de données pour l'environnement Cloudflare Worker. Cette capacité provient de la branche dev, dépend de l'injection de base de données par le point d'entrée Worker.
 
-Cloudflare Worker 环境使用的数据库后端扩展。该能力来自 dev 分支，依赖 Worker 入口注入数据库。
+**Emplacement** : `internal/extension/db/d1/`
 
-**位置**：`internal/extension/db/d1/`
+Le provider D1 n'importe pas directement le SDK Cloudflare Workers. C'est le point d'entrée Worker qui appelle `InjectDB()` avant l'initialisation pour injecter `*sql.DB`. Dans un processus local normal, même avec un binding configuré, il reste indisponible faute d'injection de base de données.
 
-D1 provider 不直接导入 Cloudflare Workers SDK，而是由 Worker 入口在初始化前调用 `InjectDB()` 注入 `*sql.DB`。普通本地进程里即使配置了 binding，也会因为没有注入数据库而保持不可用。
-
-配置示例：
+Exemple de configuration :
 
 ```yaml
 extensions:
   db_d1:
     enabled: true
     config:
-      binding: MOONBRIDGE_DB
+      binding: "DB"
 ```
 
----
+## En développement : metrics (Extension de métriques de requêtes)
 
-## 开发中：metrics（请求指标扩展）
+Enregistre pour chaque requête le modèle, le modèle amont réel, les tokens, le coût, le statut, les messages d'erreur et la durée, et fournit une interface d'interrogation quand la base de données est disponible. Cette capacité provient du travail de persistance/observabilité de la branche dev, actuellement pas considérée comme une interface publique stable.
 
-记录每次请求的模型、实际上游模型、token、费用、状态、错误信息和耗时，并在数据库可用时提供查询接口。该能力来自 dev 分支的持久化/观测工作，当前不视为稳定公开接口。
+**Emplacement** : `internal/extension/metrics/`
 
-**位置**：`internal/extension/metrics/`
-
-**实现的能力**：
+**Capacités implémentées** :
 
 ```go
-var (
-    _ plugin.Plugin                = (*Plugin)(nil)
-    _ plugin.ConfigSpecProvider    = (*Plugin)(nil)
-    _ plugin.RequestCompletionHook = (*Plugin)(nil)
-    _ plugin.RouteRegistrar        = (*Plugin)(nil)
-    _ plugin.DBConsumer            = (*Plugin)(nil)
-)
+var _ plugin.DBConsumer           = (*Plugin)(nil)
+var _ plugin.ConfigSpecProvider   = (*Plugin)(nil)
+var _ plugin.RouteRegistrar       = (*Plugin)(nil)
 ```
 
-配置示例：
+Exemple de configuration :
 
 ```yaml
 extensions:
   metrics:
     enabled: true
     config:
-      default_limit: 100
-      max_limit: 1000
+      default_limit: 100    # Limite par défaut pour les requêtes
+      max_limit: 1000       # Limite maximale
 ```
 
-当 metrics 成功绑定数据库 store 后，会注册 `GET /v1/admin/metrics`。支持 `limit`、`offset`、`model`、`status`、`since`、`until`、`order=asc` 查询参数。
-models:
-  deepseek-v4-pro:
-    extensions:
-      deepseek_v4:
-        enabled: true
-routes:
-  moonbridge:
-    model: deepseek-v4-pro
-    provider: deepseek
-models:
-  my-model:
-    web_search:
-      support: "enabled"  # 覆盖提供商级别的 injected
+Quand metrics est lié avec succès au store de base de données, il enregistre `GET /v1/admin/metrics`. Supporte les paramètres de requête `limit`, `offset`, `model`, `status`, `since`, `until`, `order=asc`.
+
+```yaml
+providers:
+  my-provider:
+    offers:
+      - model: my-model
+        web_search:
+          support: "enabled"  # Surcharge le niveau injected du fournisseur
+```

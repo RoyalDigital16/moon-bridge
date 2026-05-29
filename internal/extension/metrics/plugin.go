@@ -95,7 +95,7 @@ func (p *Plugin) Tables() []db.TableSpec {
 func (p *Plugin) BindStore(s db.Store) error {
 	p.metricsStore = NewStore(s)
 	if p.logger != nil {
-		p.logger.Info("指标持久化已启用")
+		p.logger.Info("Persistance des métriques activée")
 	}
 	return nil
 }
@@ -104,7 +104,7 @@ func (p *Plugin) DisablePersistence(reason error) {
 	p.persistenceDisabled = true
 	p.metricsStore = nil
 	if p.logger != nil {
-		p.logger.Error("指标持久化已禁用", "error", reason)
+		p.logger.Error("Persistance des métriques désactivée", "error", reason)
 	}
 }
 
@@ -140,7 +140,7 @@ func (p *Plugin) OnRequestCompleted(_ *plugin.RequestContext, result plugin.Requ
 		ErrorMessage:            result.ErrorMessage,
 	}
 	if err := p.metricsStore.Record(r); err != nil && p.logger != nil {
-		p.logger.Error("写入指标记录失败", "error", err)
+		p.logger.Error("Échec d'écriture de l'enregistrement des métriques", "error", err)
 	}
 }
 

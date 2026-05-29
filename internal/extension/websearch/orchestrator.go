@@ -122,7 +122,7 @@ func (o *Orchestrator) CreateMessage(ctx context.Context, req anthropic.MessageR
 		for _, tu := range searchUses {
 			result, execErr := o.executeSearch(ctx, tu)
 			if execErr != nil {
-				log.Warn("搜索执行失败", "tool", tu.Name, "error", execErr)
+				log.Warn("Échec d'exécution de la recherche", "tool", tu.Name, "error", execErr)
 				toolResults = append(toolResults, anthropic.ContentBlock{
 					Type:      "tool_result",
 					ToolUseID: tu.ID,
@@ -148,7 +148,7 @@ func (o *Orchestrator) CreateMessage(ctx context.Context, req anthropic.MessageR
 			Content: toolResults,
 		})
 
-		log.Debug("搜索循环轮次完成", "round", round+1, "tools_executed", len(searchUses))
+		log.Debug("Tour de boucle de recherche terminé", "round", round+1, "tools_executed", len(searchUses))
 	}
 
 	return anthropic.MessageResponse{}, fmt.Errorf("search loop exceeded max rounds (%d)", o.maxRounds)
@@ -218,7 +218,7 @@ func (o *Orchestrator) StreamMessage(ctx context.Context, req anthropic.MessageR
 		for _, tu := range searchUses {
 			result, execErr := o.executeSearch(ctx, tu)
 			if execErr != nil {
-				log.Warn("流式搜索执行失败", "tool", tu.Name, "error", execErr)
+				log.Warn("Échec d'exécution de la recherche en streaming", "tool", tu.Name, "error", execErr)
 				toolResults = append(toolResults, anthropic.ContentBlock{
 					Type:      "tool_result",
 					ToolUseID: tu.ID,
@@ -242,7 +242,7 @@ func (o *Orchestrator) StreamMessage(ctx context.Context, req anthropic.MessageR
 			Content: toolResults,
 		})
 
-		log.Debug("流式搜索循环轮次完成", "round", round+1, "tools_executed", len(searchUses))
+		log.Debug("Tour de boucle de recherche en streaming terminé", "round", round+1, "tools_executed", len(searchUses))
 	}
 
 	return nil, fmt.Errorf("stream search loop exceeded max rounds (%d)", o.maxRounds)

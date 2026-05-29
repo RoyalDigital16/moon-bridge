@@ -1,99 +1,50 @@
-# API 接口
+# API HTTP
 
-Moon Bridge 对外暴露 OpenAI Responses 兼容端点、模型列表端点和可选的管理 API。
+## Points d'accès principaux
 
-## 基础信息
+| Point d'accès | Méthode | Description |
+|---------------|---------|-------------|
+| `/health` | GET | Vérification de l'état de santé |
+| `/v1/responses` | POST | API OpenAI Responses (point d'entrée principal) |
+| `/responses` | POST | Idem (sans préfixe `/v1`) |
+| `/v1/models` | GET | Liste des modèles disponibles |
+| `/models` | GET | Idem |
 
-- **Base URL**：`http://127.0.0.1:38440`（默认）
-- **认证**：通过 `auth_token` 配置启用 Bearer Token
-- **内容类型**：`application/json`
+## API de gestion (nécessite persistance activée)
 
-## 核心端点
+| Point d'accès | Méthode | Description |
+|---------------|---------|-------------|
+| `/api/v1/config` | GET/PUT | Obtenir/mettre à jour la configuration runtime |
+| `/api/v1/models` | GET | Liste des définitions de modèles |
+| `/api/v1/models/{slug}` | GET/PUT/DELETE | Gérer un modèle spécifique |
+| `/api/v1/providers` | GET/POST/DELETE | Gérer les fournisseurs |
+| `/api/v1/providers/{key}` | GET/PUT/DELETE | Gérer un fournisseur spécifique |
+| `/api/v1/providers/{key}/offers/{model}` | PATCH/DELETE | Gérer les offres de modèles |
+| `/api/v1/routes` | GET | Liste des routes |
+| `/api/v1/routes/{alias}` | GET/PUT/DELETE | Gérer une route spécifique |
+| `/api/v1/changes/preview` | GET | Prévisualiser les changements en attente |
+| `/api/v1/changes/apply` | POST | Appliquer les changements en attente |
+| `/api/v1/changes/discard` | POST | Abandonner les changements en attente |
+| `/api/v1/settings` | GET/PUT | Paramètres généraux |
+| `/api/v1/extensions` | GET | Liste des extensions disponibles |
+| `/api/v1/extensions/{name}` | GET/PUT | Gérer la configuration d'une extension |
+| `/api/v1/export` | GET | Exporter la configuration |
+| `/api/v1/import` | POST | Importer une configuration |
+| `/v1/admin/metrics` | GET | Métriques des requêtes (si l'extension metrics est activée) |
 
-### POST /v1/responses
+## Authentification
 
-OpenAI Responses API 兼容的聊天/补全端点。
+L'authentification se fait via l'en-tête `Authorization: Bearer <token>`. Le token est configuré dans `server.auth_token`. Si le token est vide, l'authentification est désactivée.
 
-**关键请求字段**：
+## Codes d'erreur
 
-| 字段 | 类型 | 说明 |
-|-------|------|-------------|
-| `model` | string | 模型名或路由别名 |
-| `input` | string/array | 输入文本或消息数组 |
-| `include` | array | 控制返回内容（如推理内容） |
-| `tools` | array | 工具定义列表 |
-| `tool_choice` | object | 工具选择策略 |
-| `max_output_tokens` | number | 最大输出 token 数 |
-| `temperature` | number | 采样温度 |
-| `stream` | boolean | 是否启用流式响应 |
-
-**响应格式**：
-
-```json
-{
-  "id": "resp_xxx",
-  "status": "completed",
-  "model": "deepseek-v4-flash(deepseek)",
-  "output": [
-    {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Hello!"}]}
-  ],
-  "usage": {
-    "input_tokens": 10,
-    "output_tokens": 42,
-    "total_tokens": 52
-  }
-}
-```
-
-**流式响应**（`stream: true`）使用 Server-Sent Events 格式：
-
-```
-event: response.output_item.added
-data: {"type": "reasoning", ...}
-event: response.output_text.delta
-data: {"delta": "Hello"}
-event: response.completed
-data: {"response": {...}}
-```
-
-### GET /v1/models
-
-列出所有可用模型列表。
-
-## 管理 API
-
-当 `persistence.active_provider` 启用时，管理 API 在 `/api/v1/` 下可用。
-
-| 端点 | 方法 | 功能 |
-|------|------|------|
-| `/api/v1/config` | GET/PUT | 获取/更新运行时配置 |
-| `/api/v1/codex/config` | GET | 生成 Codex TOML 配置 |
-| `/api/v1/providers` | GET/POST/DELETE | 管理 Provider |
-| `/api/v1/sessions/{id}` | GET | 获取会话用量统计 |
-
-## 错误处理
-
-错误响应格式：
-
-```json
-{"error": {"message": "...", "code": "error_code"}}
-```
-
-| HTTP 状态码 | 场景 |
-|--------------|------|
-| 400 | 请求参数错误 |
-| 401 | 认证失败 |
-| 404 | 模型/端点不存在 |
-| 502 | 上游 Provider 错误 |
-
-## 与 Codex CLI 集成
-
-在 Codex 配置中指向 Moon Bridge 地址：
-
-```toml
-[openai]
-base_url = "http://127.0.0.1:38440/v1"
-api_key = "any-non-empty-value"
-```
-
-Moon Bridge 自动处理路由和协议转换。
+| Code HTTP | Signification |
+|-----------|--------------|
+| 200 | Succès |
+| 400 | Requête invalide |
+| 401 | Non authentifié |
+| 404 | Ressource non trouvée |
+| 409 | Conflit (ex: référence existante) |
+| 500 | Erreur interne du serveur |
+| 502 | Bad Gateway (échec fournisseur amont) |
+| 503 | Service indisponible |

@@ -1,110 +1,99 @@
-# Getting Started
+# Guide de démarrage
 
-> 5 分钟跑通第一个对话。更多用法见 [CookBook.md](CookBook.md)。
+> 5 minutes pour un premier dialogue. Voir [CookBook.md](../CookBook.md) pour plus d'usages.
 
-## 1. 安装
+## 1. Installation
 
-### 前置要求
+### Prérequis
 
-- **Go 1.25+** — 用于编译和运行
-- 一个上游 LLM Provider 的 API Key（如 DeepSeek、OpenAI、Anthropic、Kimi 等）
+- **Go 1.25+** — pour compiler et exécuter
+- Une clé API d'un fournisseur LLM amont (DeepSeek, OpenAI, Anthropic, Kimi, etc.)
 
-### 获取代码
+### Obtenir le code
 
 ```bash
-git clone git@github.com:ZhiYi-R/moon-bridge.git
-cd moon-bridge
+git clone https://github.com/moonbridge/moonbridge.git
+cd moonbridge
 ```
 
-### 编译
+### Compiler
 
 ```bash
 go build -o moonbridge ./cmd/moonbridge
 ```
 
-或直接运行：
+Ou exécutez directement :
 
 ```bash
 go run ./cmd/moonbridge -config config.yml
 ```
 
-## 2. 配置
+## 2. Configuration
 
-复制示例配置并编辑：
+Copiez l'exemple de configuration et éditez-le :
 
 ```bash
 cp config.example.yml config.yml
+# Éditez config.yml pour définir votre api_key et vos modèles
 ```
 
-详细配置说明见 [CONFIGURATION.md](CONFIGURATION.md)。
+Voir [CONFIGURATION.md](CONFIGURATION.md) pour les détails de configuration.
 
-### 最小配置示例（以 DeepSeek 为例）
+### Configuration minimale (exemple avec DeepSeek)
 
 ```yaml
-mode: "Transform"
-server:
-  addr: "127.0.0.1:38440"
-
-defaults:
-  model: "deepseek-chat"
-
 models:
-  deepseek-chat:
-    context_window: 1000000
+  deepseek-model:
+    context_window: 65536
+    output_max: 8192
 
 providers:
   deepseek:
-    base_url: "https://api.deepseek.com/anthropic"
-    api_key: "sk-你的-API-Key"
-    version: "2023-06-01"
-    protocol: "anthropic"
-    offers:
-      - model: deepseek-chat
+    base_url: "https://api.deepseek.com"
+    api_key: "sk-votre-clé-API"
+    models:
+      deepseek-model:
+        upstream_model: "deepseek-chat"
 
 routes:
-  default:
-    model: deepseek-chat
-    provider: deepseek
+  my-model: deepseek-model@deepseek
 ```
 
-### 支持四种上游协议
+### Protocoles amont supportés
 
-| 协议 | protocol 值 | 示例 Provider |
-|------|-------------|---------------|
-| Anthropic Messages | `anthropic` | DeepSeek、Kimi、Anthropic |
-| OpenAI Responses | `openai-response` | OpenAI（直通） |
-| Google GenAI (Gemini) | `google-genai` | Google Gemini |
-| OpenAI Chat | `openai-chat` | 兼容 OpenAI Chat 的 API |
+| Protocole | Valeur `protocol` | Exemple de fournisseur |
+|-----------|-------------------|----------------------|
+| Anthropic Messages | `anthropic` (défaut) | DeepSeek, Anthropic, Kimi |
+| OpenAI Responses | `openai-response` | OpenAI (passage direct) |
+| Google GenAI | `google-genai` | Google Gemini |
+| OpenAI Chat | `openai-chat` | API compatible OpenAI Chat |
 
-## 3. 启动
+## 3. Démarrage
 
 ```bash
 go run ./cmd/moonbridge -config config.yml
 ```
 
-日志输出：
+Sortie des logs :
 
 ```
-INFO HTTP 服务器监听中 addr=127.0.0.1:38440
+INFO Serveur HTTP en écoute addr=127.0.0.1:38440
 ```
 
-## 4. 测试连通性
+## 4. Tester la connectivité
 
 ```bash
-curl http://127.0.0.1:38440/v1/responses \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer any-value" \
-  -d '{"model": "default", "input": "Hello"}'
+curl http://127.0.0.1:38440/health
 ```
 
-## 5. 验证模型列表
+## 5. Vérifier la liste des modèles
 
 ```bash
 curl http://127.0.0.1:38440/v1/models
 ```
 
-## 下一步
+## Prochaines étapes
 
-- [CookBook.md](CookBook.md) — 常见用法场景
-- [architecture.md](architecture.md) — 系统架构详解
-- [CONFIGURATION.md](CONFIGURATION.md) — 完整配置指南
+- [CookBook.md](../CookBook.md) — Scénarios d'utilisation courants
+- [architecture.md](architecture.md) — Architecture détaillée
+- [CONFIGURATION.md](CONFIGURATION.md) — Guide de configuration complet

@@ -212,7 +212,7 @@ func TestInjectCoreWebSearchAutoInjectedAddsToolsWithoutExplicitRequestTools(t *
 	coreReq := &format.CoreRequest{Model: "deepseek-v4-pro"}
 	openAIReq := openai.ResponsesRequest{
 		Model: "deepseek-v4-pro",
-		Input: json.RawMessage(`"搜索互联网获取今天的日期"`),
+		Input: json.RawMessage(`"Rechercher la date d'aujourd'hui sur Internet"`),
 	}
 	ok := srv.injectCoreWebSearch(context.Background(), coreReq, provider.ProviderCandidate{
 		ProviderKey:   "opencode",
@@ -252,7 +252,7 @@ func TestInjectCoreWebSearchSkipsWhenCandidateHasNativeSearch(t *testing.T) {
 	coreReq := &format.CoreRequest{Model: "deepseek-v4-flash"}
 	openAIReq := openai.ResponsesRequest{
 		Model: "deepseek-v4-flash",
-		Input: json.RawMessage(`"搜索互联网获取今天的日期"`),
+		Input: json.RawMessage(`"Rechercher la date d'aujourd'hui sur Internet"`),
 	}
 	ok := srv.injectCoreWebSearch(context.Background(), coreReq, provider.ProviderCandidate{
 		ProviderKey:   "deepseek",

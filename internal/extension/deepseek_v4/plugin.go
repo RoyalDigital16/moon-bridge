@@ -228,7 +228,7 @@ func (p *DSPlugin) warnRequiredThinkingFallback(target string, attrs ...any) {
 	}
 	args := []any{"target", target}
 	args = append(args, attrs...)
-	p.logger.Warn("DeepSeek V4 历史缺少可回放 thinking，已在请求侧补空 thinking block", args...)
+	p.logger.Warn("Historique DeepSeek V4 manquant de thinking rejouable, bloc thinking vide ajouté côté requête", args...)
 }
 
 func (p *DSPlugin) thinkingBlockFromSummary(summary []openai.ReasoningItemSummary) (anthropic.ContentBlock, bool) {

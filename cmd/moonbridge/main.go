@@ -53,13 +53,13 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	extensions := app.BuiltinExtensions()
 	resolvedConfigPath, err := config.ResolveConfigPath(*configPath)
 	if err != nil {
-		writeStartupError(stderr, "配置文件路径解析失败", "", err,
-			"设置 XDG_CONFIG_HOME，或使用 -config 明确指定配置文件路径。")
+		writeStartupError(stderr, "Échec de l'analyse du chemin du fichier de configuration", "", err,
+			"Définissez XDG_CONFIG_HOME, ou utilisez -config pour spécifier le chemin du fichier de configuration.")
 		return exitStartupErr
 	}
 	if *dumpConfigSchema {
 		if err := app.DumpConfigSchema(resolvedConfigPath); err != nil {
-			writeStartupError(stderr, "Schema dump 失败", resolvedConfigPath, err)
+			writeStartupError(stderr, "Échec du vidage du schéma", resolvedConfigPath, err)
 			return exitStartupErr
 		}
 		fmt.Fprintln(stdout, resolvedConfigPath)
@@ -70,25 +70,25 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 		ExtensionSpecs: extensions.ConfigSpecs(),
 	})
 	if err != nil {
-		writeStartupError(stderr, "配置文件加载失败", resolvedConfigPath, err,
-			"未传 -config 时默认读取 ${XDG_CONFIG_HOME:-$HOME/.config}/moonbridge/config.yml。",
-			"检查 YAML 语法、字段拼写和缩进。",
-			"确认 provider、routes、developer.proxy 等必填配置都已补齐。",
-			"如果是 protocol 字段，Responses 直通请使用 openai-response。")
+		writeStartupError(stderr, "Échec du chargement de la configuration", resolvedConfigPath, err,
+			"Par défaut (sans -config) : ${XDG_CONFIG_HOME:-$HOME/.config}/moonbridge/config.yml.",
+			"Vérifiez la syntaxe YAML, l'orthographe des champs et l'indentation.",
+			"Assurez-vous que les configurations obligatoires (provider, routes, developer.proxy) sont toutes présentes.",
+			"Pour le champ protocol, utilisez openai-response pour le passage direct Responses.")
 		return exitStartupErr
 	}
 	if err := logger.Init(logger.Config{Level: logger.Level(cfg.LogLevel), Format: cfg.LogFormat, Output: stderr}); err != nil {
-		writeStartupError(stderr, "日志初始化失败", resolvedConfigPath, err,
-			"检查 log.level 和 log.format 是否为支持的取值。")
+		writeStartupError(stderr, "Échec de l'initialisation du journal", resolvedConfigPath, err,
+			"Vérifiez que log.level et log.format sont des valeurs supportées.")
 		return exitStartupErr
 	}
-	slog.Info("配置已加载", "path", resolvedConfigPath, "mode", cfg.Mode, "addr", cfg.Addr)
+	slog.Info("Configuration chargée", "path", resolvedConfigPath, "mode", cfg.Mode, "addr", cfg.Addr)
 	if *mode != "" {
 		cfg.Mode = config.Mode(*mode)
 		if err := cfg.Validate(); err != nil {
-			writeStartupError(stderr, "配置校验失败", resolvedConfigPath, fmt.Errorf("-mode %q: %w", *mode, err),
-				"检查 -mode 是否为 Transform、CaptureResponse 或 CaptureAnthropic。",
-				"对应模式下的 provider / developer.proxy 配置也必须完整。")
+			writeStartupError(stderr, "Échec de la validation de la configuration", resolvedConfigPath, fmt.Errorf("-mode %q: %w", *mode, err),
+				"Vérifiez que -mode est Transform, CaptureResponse ou CaptureAnthropic.",
+				"Les configurations provider / developer.proxy pour ce mode doivent également être complètes.")
 			return exitStartupErr
 		}
 	}
@@ -118,8 +118,8 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	if *printCodexConfig != "" {
 		if err := codex.GenerateConfigToml(stdout, *printCodexConfig, *codexBaseURL, *codexHome,
 			config.ProviderFromGlobalConfig(&cfg), config.PluginFromGlobalConfig(&cfg), config.ServerFromGlobalConfig(&cfg)); err != nil {
-			writeStartupError(stderr, "生成 Codex 配置失败", resolvedConfigPath, err,
-				"确认 -codex-home 目录可写，或去掉 -codex-home 只打印 config.toml。")
+			writeStartupError(stderr, "Échec de la génération de la configuration Codex", resolvedConfigPath, err,
+				"Assurez-vous que le répertoire -codex-home est accessible en écriture, ou omettez -codex-home pour afficher seulement config.toml.")
 			return exitRuntimeErr
 		}
 		return exitOK
@@ -129,26 +129,26 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 	defer stop()
 
 	if err := app.RunServer(ctx, cfg, stderr); err != nil {
-		writeStartupError(stderr, "服务运行失败", resolvedConfigPath, err,
-			"检查监听地址是否被占用，以及上游 provider 配置是否可用。")
+		writeStartupError(stderr, "Échec de l'exécution du service", resolvedConfigPath, err,
+			"Vérifiez si l'adresse d'écoute est déjà utilisée et si la configuration du fournisseur amont est disponible.")
 		return exitRuntimeErr
 	}
 	return exitOK
 }
 
 func writeStartupError(output io.Writer, title string, configPath string, err error, hints ...string) {
-	fmt.Fprintf(output, "Moon Bridge 启动失败：%s\n", title)
+	fmt.Fprintf(output, "Échec du démarrage de Moon Bridge : %s\n", title)
 	if configPath != "" {
-		fmt.Fprintf(output, "配置文件: %s\n", configPath)
+		fmt.Fprintf(output, "Fichier de configuration : %s\n", configPath)
 	}
-	fmt.Fprintln(output, "错误详情:")
+	fmt.Fprintln(output, "Détails de l'erreur :")
 	for i, msg := range errorChain(err) {
 		fmt.Fprintf(output, "  %d. %s\n", i+1, msg)
 	}
 	if len(hints) == 0 {
 		return
 	}
-	fmt.Fprintln(output, "处理建议:")
+	fmt.Fprintln(output, "Suggestions :")
 	for _, hint := range hints {
 		fmt.Fprintf(output, "  - %s\n", hint)
 	}

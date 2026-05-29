@@ -19,7 +19,7 @@ func (fn probeWebSearchCandidateFunc) ProbeWebSearchCandidate(ctx context.Contex
 }
 
 func TestWelcomeMessage(t *testing.T) {
-	want := "欢迎使用 Moon Bridge!"
+	want := "Bienvenue sur Moon Bridge !"
 
 	if got := WelcomeMessage(); got != want {
 		t.Fatalf("WelcomeMessage() = %q, want %q", got, want)
@@ -31,7 +31,7 @@ func TestRunWritesWelcomeMessage(t *testing.T) {
 
 	Run(&output)
 
-	want := "欢迎使用 Moon Bridge!\n"
+	want := "Bienvenue sur Moon Bridge !\n"
 	if got := output.String(); got != want {
 		t.Fatalf("Run() wrote %q, want %q", got, want)
 	}

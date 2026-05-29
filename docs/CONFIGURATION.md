@@ -1,10 +1,10 @@
 # Configuration
 
-> 完整示例见 [`config.example.yml`](config.example.yml)，JSON Schema 见 [`config.schema.json`](config.schema.json)
+> Voir l'exemple complet dans [`config.example.yml`](config.example.yml), et le JSON Schema dans [`config.schema.json`](config.schema.json)
 
-Moon Bridge 使用 YAML 配置文件。默认路径为当前目录下的 `config.yml`，通过 `-config <path>` 可指定任意路径。
+Moon Bridge utilise un fichier de configuration YAML. Le chemin par défaut est `config.yml` dans le répertoire courant, mais vous pouvez spécifier un chemin avec `-config <path>`.
 
-## 顶层结构
+## Structure racine
 
 ```yaml
 mode: "Transform"  # Transform / CaptureAnthropic / CaptureResponse
@@ -17,7 +17,7 @@ server:
   addr: "127.0.0.1:38440"
   auth_token: ""
 
-system_prompt: ""  # 全局 system prompt（可选）
+system_prompt: ""  # Prompt système global (optionnel)
 
 defaults:
   model: "moonbridge"
@@ -26,23 +26,23 @@ defaults:
 
 ## Mode
 
-| 值 | 行为 |
-|-----|------|
-| `Transform` | 接收 OpenAI Responses 请求，按 Provider 协议转换后转发 |
-| `CaptureAnthropic` | 透明代理到 Anthropic 上游（不转换） |
-| `CaptureResponse` | 透明代理到 OpenAI 上游（不转换） |
+| Valeur | Comportement |
+|--------|-------------|
+| `Transform` | Reçoit les requêtes OpenAI Responses, les convertit selon le protocole du fournisseur et les transmet |
+| `CaptureAnthropic` | Proxy transparent vers Anthropic (sans conversion) |
+| `CaptureResponse` | Proxy transparent vers OpenAI (sans conversion) |
 
 ## Server
 
 ```yaml
 server:
-  addr: "127.0.0.1:38440"    # 监听地址
-  auth_token: ""              # Bearer 认证 Token（空 = 不认证）
+  addr: "127.0.0.1:38440"    # Adresse d'écoute
+  auth_token: ""              # Jeton d'authentification Bearer (vide = pas d'authentification)
 ```
 
 ## Models
 
-模型定义包含上下文窗口、推理能力、扩展支持等元信息：
+Les définitions de modèles contiennent la fenêtre de contexte, les capacités d'inférence, le support d'extensions, etc. :
 
 ```yaml
 models:
@@ -53,13 +53,13 @@ models:
     default_reasoning_level: "high"
     supported_reasoning_levels:
       - effort: "low"
-        description: "Low effort reasoning"
+        description: "Raisonnement faible"
       - effort: "medium"
-        description: "Medium effort reasoning"
+        description: "Raisonnement moyen"
       - effort: "high"
-        description: "High effort reasoning"
+        description: "Raisonnement élevé"
       - effort: "xhigh"
-        description: "Extra high effort reasoning"
+        description: "Raisonnement très élevé"
     supports_reasoning_summaries: true
     input_modalities:
       - "text"
@@ -75,7 +75,7 @@ models:
 
 ## Providers
 
-Provider 定义上游 API 的连接信息和协议类型。
+Les fournisseurs définissent les informations de connexion à l'API amont et le type de protocole.
 
 ```yaml
 providers:
@@ -84,9 +84,9 @@ providers:
     api_key: "sk-..."
     version: "2023-06-01"
     user_agent: "moonbridge/1.0"
-    protocol: "anthropic"         # 默认 anthropic
+    protocol: "anthropic"         # anthropic par défaut
 
-    # Google GenAI 特有字段（protocol: google-genai）
+    # Champs spécifiques Google GenAI (protocol: google-genai)
     project: "my-gcp-project"
     location: "us-central1"
     api_version: "v1beta"
@@ -107,36 +107,36 @@ providers:
           cache_read_price: 0.25
 ```
 
-### Protocol 类型
+### Types de protocole
 
-| 值 | 上游格式 | 对应 Adapter |
-|-----|----------|-------------|
-| `anthropic`（默认） | Anthropic Messages API | `internal/protocol/anthropic` |
-| `openai-response` | OpenAI Responses API | `internal/protocol/openai`（直通） |
-| `google-genai` | Google Generative AI (Gemini) API | `internal/protocol/google` |
-| `openai-chat` | OpenAI Chat Completions API | `internal/protocol/chat` |
+| Valeur | Format amont | Adapter correspondant |
+|--------|-------------|----------------------|
+| `anthropic` (défaut) | API Anthropic Messages | `internal/protocol/anthropic` |
+| `openai-response` | API OpenAI Responses | `internal/protocol/openai` (passage direct) |
+| `google-genai` | API Google Generative AI (Gemini) | `internal/protocol/google` |
+| `openai-chat` | API OpenAI Chat Completions | `internal/protocol/chat` |
 
 ## Routes
 
-路由将模型别名映射到特定 Provider 的上游模型：
+Les routes mappent les alias de modèles vers un modèle amont spécifique d'un fournisseur :
 
 ```yaml
 routes:
-  alias-name:              # 客户端使用的模型名
-    model: my-model         # models 段定义的模型名
-    provider: my-provider   # providers 段定义的 Provider 名
+  nom-alias:              # Nom de modèle utilisé par le client
+    model: my-model        # Nom du modèle défini dans la section models
+    provider: my-provider  # Nom du fournisseur défini dans la section providers
 ```
 
 ## Web Search
 
-Web Search 支持可在模型、Provider 和全局三个层级覆盖（优先级：模型 > Provider > 全局）。
+Le support Web Search peut être configuré à trois niveaux : modèle, fournisseur et global (priorité : modèle > fournisseur > global).
 
-| 模式 | 行为 |
-|------|------|
-| `auto` | 优先使用 Provider 原生 web_search API，不支持时回退到注入模式 |
-| `enabled` | 启用 Provider 原生 web_search |
-| `disabled` | 禁用 Web Search |
-| `injected` | 通过 Tavily/Firecrawl 后端注入搜索结果 |
+| Mode | Comportement |
+|------|-------------|
+| `auto` | Utilise d'abord l'API web_search native du fournisseur, repli sur le mode injection si non supporté |
+| `enabled` | Active le web_search natif du fournisseur |
+| `disabled` | Désactive la recherche Web |
+| `injected` | Injecte les résultats de recherche via le backend Tavily/Firecrawl |
 
 ## Cache
 
@@ -184,9 +184,9 @@ extensions:
       max_limit: 1000
 ```
 
-## Proxy（Capture 模式）
+## Proxy (mode Capture)
 
-仅在 Capture 模式下有效：
+Valable uniquement en mode Capture :
 
 ```yaml
 proxy:
@@ -199,16 +199,16 @@ proxy:
     version: "2023-06-01"
 ```
 
-## CLI 标志
+## Flags CLI
 
-| 标志 | 默认值 | 说明 |
-|------|--------|------|
-| `-config` | `${XDG_CONFIG_HOME}/moonbridge/config.yml` | 配置文件路径 |
-| `-addr` | 来自配置文件 | 覆盖监听地址 |
-| `-mode` | 来自配置文件 | 覆盖运行模式（Transform/CaptureAnthropic/CaptureResponse） |
-| `-print-addr` | — | 打印配置的监听地址后退出 |
-| `-print-mode` | — | 打印配置的运行模式后退出 |
-| `-print-default-model` | — | 打印默认模型别名后退出 |
-| `-print-codex-model` | — | 打印 Codex 模型后退出 |
-| `-print-codex-config <model>` | — | 为指定模型生成 Codex config.toml 后退出 |
-| `-dump-config-schema` | — | 生成 config.schema.json 后退出 |
+| Flag | Valeur par défaut | Description |
+|------|-------------------|-------------|
+| `-config` | `${XDG_CONFIG_HOME}/moonbridge/config.yml` | Chemin du fichier de configuration |
+| `-addr` | Depuis la configuration | Surcharge l'adresse d'écoute |
+| `-mode` | Depuis la configuration | Surcharge le mode (Transform/CaptureAnthropic/CaptureResponse) |
+| `-print-addr` | — | Affiche l'adresse d'écoute configurée puis quitte |
+| `-print-mode` | — | Affiche le mode configuré puis quitte |
+| `-print-default-model` | — | Affiche l'alias de modèle par défaut puis quitte |
+| `-print-codex-model` | — | Affiche le modèle Codex puis quitte |
+| `-print-codex-config <model>` | — | Génère config.toml pour le modèle spécifié puis quitte |
+| `-dump-config-schema` | — | Génère config.schema.json puis quitte |

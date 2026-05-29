@@ -1,193 +1,181 @@
-# 系统架构
+# Architecture du système
 
-## 项目概述
+## Aperçu du projet
 
-Moon Bridge 是一个 Go 语言编写的 HTTP 代理/协议转换服务器。对外暴露 **OpenAI Responses API**（`/v1/responses`），对内支持 **Anthropic Messages**、**Google Gemini（GenAI）**、**OpenAI Chat Completions** 四种上游协议，以及 OpenAI Responses 直通。
+Moon Bridge est un serveur de proxy/conversion de protocole écrit en Go. Il expose une **API OpenAI Responses** (`/v1/responses`) en externe et supporte en interne quatre protocoles amont : **Anthropic Messages**, **Google Gemini (GenAI)**, **OpenAI Chat Completions**, ainsi que le passage direct OpenAI Responses.
 
-核心定位：让 Codex CLI（或其他 OpenAI Responses API 客户端）通过一个统一入口访问不同协议的上游 LLM Provider，无需客户端感知协议差异。
+Positionnement clé : permettre à Codex CLI (ou tout autre client API OpenAI Responses) d'accéder via un point d'entrée unique à différents fournisseurs LLM amont avec des protocoles différents, sans que le client ait à connaître les différences de protocole.
 
-## 四层架构
-
-```
-┌─────────────────────────────────────────────────┐
-│                  Service 层                       │
-│  server(路由/处理)  adapter_dispatch(协议分发)    │
-│  provider(路由)     stats(统计)      trace(跟踪)   │
-│  proxy(Capture代理)  api(管理 API)                │
-│  store(持久化)       runtime(运行时)              │
-├─────────────────────────────────────────────────┤
-│                  Protocol 层                      │
-│  format(核心类型/注册表)  anthropic(Anthropic 适配) │
-│  openai(OpenAI 适配)    google(GenAI 适配)        │
-│  chat(OpenAI Chat 适配) cache(缓存)               │
-├─────────────────────────────────────────────────┤
-│                  基础组件（直接位于 internal/ 下） │
-│  config(配置)  logger(日志)  openai_dto(共享 DTO) │
-│  modelref(模型引用)  session(会话)  db(数据库)    │
-├─────────────────────────────────────────────────┤
-│                  Extension 层                     │
-│  deepseek_v4  visual  websearch  websearchinjected│
-│  kimi_workaround  metrics  codex(Codex模型目录)   │
-│  plugin(插件注册/接口)  db(持久化后端: SQLite/D1) │
-└─────────────────────────────────────────────────┘
-```
-
-### 基础组件（internal/ 顶层包）
-
-不依赖任何 Protocol 或 Service 组件，包直接位于 `internal/` 下（无 `foundation/` 子目录）：
-
-- `internal/config` — YAML 配置加载、校验、Schema 生成、热重载。支持 `config.schema.json` 和 `config.example.yml`
-- `internal/logger` — 基于 `slog.Handler` 接口封装的日志系统，支持 consumer 模式
-- `internal/openai_dto` — 共享的 OpenAI 基础类型（DTO、枚举），被多个 Protocol 复用
-- `internal/modelref` — 模型引用（`model(provider)` 格式）的解析与规范化
-- `internal/session` — 会话管理与上下文绑定
-- `internal/db` — 数据库 Provider 注册表
-
-### Protocol 层
-
-协议转换核心，每个 Adapter 实现统一的 `format.ProviderAdapter` 接口（定义在 `internal/format/adapter.go`）：
-
-- `internal/format` — 核心类型定义（`CoreRequest`、`CoreResponse`、`CoreTool`、`CoreContentBlock` 等在 `types.go`）+ Registry（`registry.go`）
-- `internal/protocol/openai` — OpenAI Responses Adapter：Core ⇄ OpenAI Responses 格式
-- `internal/protocol/anthropic` — Anthropic Messages Adapter：流式事件转换、工具调用映射、缓存控制
-- `internal/protocol/google` — Google Gemini (GenAI) Adapter
-- `internal/protocol/chat` — OpenAI Chat Completions Adapter
-- `internal/protocol/cache` — Prompt 缓存规划（breakpoint 注入、TTL 管理、命中率跟踪）
-
-### Service 层
-
-业务编排层，组合基础层和 Protocol 组件：
-
-- `internal/service/server` — HTTP 服务器、路由（`/v1/responses`、`/v1/models`、`/health` 等）、认证
-- `internal/service/server/adapter_dispatch.go` — Adapter 分发路径（switch 协议类型 → 调用对应 Adapter）
-- `internal/service/provider` — Provider 管理器（多 Provider 路由、配置热重载）
-- `internal/service/proxy` — Capture 模式下的透明代理
-- `internal/service/app` — 应用生命周期管理（初始化、注册 Adapter、启动 HTTP 服务）
-- `internal/service/api` — 管理 REST API（运行时配置 CRUD，路由在 `router.go`）
-- `internal/service/stats` — 用量统计（会话级别的 token 和费用聚合）
-- `internal/service/trace` — 请求跟踪（捕获请求/响应的完整链路，持久化到 `data/trace/`）
-- `internal/service/store` — 配置持久化存储（SQLite / D1）
-- `internal/service/runtime` — 运行时上下文
-- `internal/service/bridge` — 备用桥接层
-
-### Extension 层
-
-可插拔的功能扩展，位于 `internal/extension/`：
-
-- `internal/extension/deepseek_v4` — DeepSeek V4 集成（reinforce instructions、CoT 链回放）
-- `internal/extension/visual` — 视觉模型任务分发（主模型不支持图像时自动路由）
-- `internal/extension/websearch` — Web Search 自动模式
-- `internal/extension/websearchinjected` — Web Search 注入模式
-- `internal/extension/metrics` — 请求指标采集与查询
-- `internal/extension/plugin` — 三方插件注册管理（`PluginRegistry` + `CorePluginHooks`）
-- `internal/extension/codex` — Codex 模型目录
-- `internal/extension/db` — 持久化 Provider（SQLite 本地 / Cloudflare D1 Worker）
-
-## 三种运行模式
-
-| 模式 | 入口协议 → 上游协议 | 描述 |
-|------|---------------------|------|
-| `Transform`（默认） | OpenAI Responses → 任意 Adapter | 完整协议转换流水线 |
-| `CaptureAnthropic` | Anthropic Messages → Anthropic | 透明投递 |
-| `CaptureResponse` | OpenAI Responses → OpenAI | 透明投递 |
-
-## 请求生命周期数据流（Transform 模式）
+## Architecture en quatre couches
 
 ```
-客户端 (Codex CLI)
-    │ POST /v1/responses (OpenAI Responses 格式)
+┌──────────────────────────────────────────────────┐
+│                  Couche Service                    │
+│  server(routage/traitement)  adapter_dispatch     │
+│  provider(routage)     stats(statistiques)        │
+│  proxy(proxy Capture)  api(API de gestion)        │
+│  store(persistance)    runtime(exécution)         │
+├──────────────────────────────────────────────────┤
+│                  Couche Protocol                   │
+│  format(types/registre)  anthropic(adapt.)        │
+│  openai(adapt. OpenAI)    google(adapt. GenAI)    │
+│  chat(adapt. OpenAI Chat) cache(mise en cache)    │
+├──────────────────────────────────────────────────┤
+│           Composants de base (sous internal/)     │
+│  config(configuration)  logger(journalisation)    │
+│  openai_dto(DTO partagés)  modelref(réf. modèle)  │
+│  session(session)  db(base de données)            │
+├──────────────────────────────────────────────────┤
+│                  Couche Extension                  │
+│  kimi_workaround  metrics  codex(catalogue)       │
+│  plugin(interface plugin)  db(backends: SQLite/D1)│
+└──────────────────────────────────────────────────┘
+```
+
+### Composants de base (packages internes sous `internal/`)
+
+Sans dépendance aux composants Protocol ou Service, packages directement sous `internal/` :
+
+- `internal/config` — Chargement YAML, validation, génération Schema, rechargement à chaud. Supporte `config.schema.json` et `config.example.yml`
+- `internal/logger` — Système de journalisation basé sur l'interface `slog.Handler`, support du mode consumer
+- `internal/openai_dto` — Types de base OpenAI partagés (DTO, énumérations), réutilisés par plusieurs protocoles
+- `internal/modelref` — Analyse et normalisation des références de modèle (`model(provider)`)
+- `internal/session` — Gestion des sessions et liaison de contexte
+- `internal/db` — Registre des fournisseurs de base de données
+
+### Couche Protocol
+
+Noyau de conversion de protocole, chaque adaptateur implémente l'interface unifiée `format.ProviderAdapter` (définie dans `internal/format/adapter.go`) :
+
+- `internal/format` — Définitions de types principaux (`CoreRequest`, `CoreResponse`, `CoreTool`, `CoreContentBlock` dans `types.go`) + Registry (`registry.go`)
+- `internal/protocol/openai` — Adaptateur OpenAI Responses : Core ⇄ format OpenAI Responses
+- `internal/protocol/anthropic` — Adaptateur Anthropic Messages : conversion d'événements streaming, mapping d'appels d'outils, contrôle de cache
+- `internal/protocol/google` — Adaptateur Google GenAI : conversion Gemini → Core
+- `internal/protocol/chat` — Adaptateur OpenAI Chat : conversion Chat → Core
+- `internal/protocol/cache` — Planification du cache Prompt (injection de breakpoints, gestion TTL, suivi du taux de succès)
+
+### Couche Service
+
+Couche d'orchestration métier, combine les composants de base et les protocoles :
+
+- `internal/service/server` — Serveur HTTP, routage (`/v1/responses`, `/v1/models`, `/health`), authentification
+- `internal/service/server/adapter_dispatch.go` — Chemin de distribution Adapter (switch type de protocole → appel de l'Adapter correspondant)
+- `internal/service/provider` — Gestionnaire de fournisseurs (routage multi-fournisseur, rechargement à chaud)
+- `internal/service/proxy` — Proxy transparent en mode Capture
+- `internal/service/app` — Cycle de vie de l'application (initialisation, enregistrement des Adapters, démarrage HTTP)
+- `internal/service/api` — API REST de gestion (CRUD de configuration runtime, routage dans `router.go`)
+- `internal/service/stats` — Statistiques d'utilisation (agrégation de tokens et coûts par session)
+- `internal/service/trace` — Traçage des requêtes (capture de la chaîne complète requête/réponse, persistance dans `data/trace/`)
+- `internal/service/store` — Stockage persistant de configuration (SQLite / D1)
+- `internal/service/runtime` — Contexte d'exécution
+- `internal/service/bridge` — Couche de pont de secours
+
+### Couche Extension
+
+Extensions fonctionnelles enfichables, situées dans `internal/extension/` :
+
+- `internal/extension/deepseek_v4` — Intégration DeepSeek V4 (reinforce instructions, rejeu de chaîne CoT)
+- `internal/extension/visual` — Distribution de tâches visuelles (routage automatique quand le modèle principal ne supporte pas les images)
+- `internal/extension/websearch` — Mode automatique Web Search
+- `internal/extension/websearchinjected` — Mode injecté Web Search
+- `internal/extension/metrics` — Collecte et interrogation des métriques de requêtes
+- `internal/extension/plugin` — Gestion d'enregistrement des plugins tiers (`PluginRegistry` + `CorePluginHooks`)
+- `internal/extension/codex` — Catalogue de modèles Codex
+- `internal/extension/db` — Fournisseurs de persistance (SQLite local / Cloudflare D1 Worker)
+
+## Trois modes de fonctionnement
+
+| Mode | Protocole d'entrée → Protocole amont | Description |
+|------|--------------------------------------|-------------|
+| `Transform` (défaut) | OpenAI Responses → tout Adapter | Pipeline complet de conversion de protocole |
+| `CaptureAnthropic` | Anthropic Messages → Anthropic | Livraison transparente |
+| `CaptureResponse` | OpenAI Responses → OpenAI | Livraison transparente |
+
+## Flux de données du cycle de vie d'une requête (mode Transform)
+
+```
+Client (Codex CLI)
+    │ POST /v1/responses (format OpenAI Responses)
     ▼
-server.handleResponses()
-    │ 认证 / 日志 / 统计初始化 / 路由解析
+internal/service/server (dispatch.go)
+    │ Authentification / Journalisation / Initialisation stats / Résolution routage
     ▼
-adapter_dispatch.go (Adapter 分发)
-    │ preferred.Protocol 决定上游协议
+adapter_dispatch.go (Distribution Adapter)
+    │ preferred.Protocol détermine le protocole amont
     │
-    ├── ProtocolAnthropic       → anthropic adapter
-    ├── ProtocolGoogleGenAI     → google adapter
-    ├── ProtocolOpenAIChat      → chat adapter
-    └── ProtocolOpenAIResponse  → 直通（无协议转换）
+    ├── ProtocolAnthropic    → anthropic.ProviderAdapter (conversion Core → Anthropic Messages)
+    ├── ProtocolOpenAIChat   → chat.ProviderAdapter     (conversion Core → OpenAI Chat)
+    ├── ProtocolGoogleGenAI  → google.ProviderAdapter   (conversion Core → Google GenAI)
+    ├── ProtocolOpenAIResponse → passage direct (sans conversion)
     │
-    ├── 插件拦截 (PluginHooks)
-    │    MutateCoreRequest → [Adapter] → RememberContent → OnStreamEvent
+    ├── Interception plugin (PluginHooks)
     │
     ▼
-客户端 ←── OpenAI Responses 响应
+Fournisseur amont (API externe)
+    │
+    ▼ (conversion inverse)
+Client ←── Réponse OpenAI Responses
 ```
 
-## 模型路由
+## Routage des modèles
 
-路由解析优先级：
+Priorité de résolution du routage :
 
-1. 客户端直接指定 Provider 限定名（`model(provider)` 格式）
-2. Moon Bridge `routes` 配置中的别名映射
-3. Provider `offers` 列表中匹配模型名
+1. Client spécifie directement le nom qualifié du fournisseur (format `model(provider)`)
+2. Correspondance d'alias dans la configuration `routes` de Moon Bridge
+3. Correspondance du nom de modèle dans la liste `offers` du fournisseur
 
-## Provider 协议字段
+## Champ protocol du fournisseur
 
-每个 Provider 通过 `protocol` 字段声明上游协议：
+Chaque fournisseur déclare son protocole amont via le champ `protocol` :
 
-| 值 | 上游格式 | 对应 Adapter |
-|-----|----------|-------------|
-| `anthropic`（默认） | Anthropic Messages API | `internal/protocol/anthropic` |
-| `openai-response` | OpenAI Responses API | `internal/protocol/openai`（直通） |
-| `google-genai` | Google Generative AI (Gemini) API | `internal/protocol/google` |
-| `openai-chat` | OpenAI Chat Completions API | `internal/protocol/chat` |
+| Valeur | Format amont | Adapter correspondant |
+|--------|-------------|----------------------|
+| `anthropic` (défaut) | API Anthropic Messages | `internal/protocol/anthropic` |
+| `openai-response` | API OpenAI Responses | `internal/protocol/openai` (passage direct) |
+| `openai-chat` | API OpenAI Chat | `internal/protocol/chat` |
+| `google-genai` | API Google Gemini | `internal/protocol/google` |
 
-## Adapter 体系
+## Système d'Adapter
 
-所有 Adapter 实现 `internal/format/adapter.go` 中定义的接口，通过 `internal/format/registry.go` 中的 `Registry` 管理注册：
+Tous les Adapters implémentent les interfaces définies dans `internal/format/adapter.go`, et sont gérés par le `Registry` dans `internal/format/registry.go` :
 
-```go
+- `format.ProviderAdapter` — Convertit un `CoreRequest` en requête spécifique au protocole, appelle l'API, retourne `CoreResponse`
+- `format.ProviderStreamAdapter` — Version streaming, retourne un canal `*CoreStreamEvent`
 
-type ClientAdapter interface {
-    Protocol() string
-    ToCoreRequest(context.Context, []byte) (*CoreRequest, error)
-    FromCoreResponse(context.Context, *CoreResponse) ([]byte, error)
-}
+### Appels d'outils inter-protocoles
 
-type ProviderAdapter interface {
-    ProviderProtocol() string
-    FromCoreRequest(context.Context, *CoreRequest) (any, error)
-    ToCoreResponse(context.Context, any) (*CoreResponse, error)
-}
-type ProviderStreamAdapter interface { ... }
-type ClientStreamAdapter interface { ... }
-```
+Le défi principal des appels d'outils entre protocoles réside dans les différences de format. Moon Bridge utilise `CoreTool` / `CoreContentBlock` comme représentation intermédiaire pour masquer ces différences :
 
-### 跨协议工具调用
+- OpenAI Responses : `tool_use` est un type d'item de sortie
+- Anthropic : `tool_use` est un type de `ContentBlock`
+- Google Gemini : appel de fonction via `FunctionCall` dans `content.parts`
+- OpenAI Chat : `tool_calls` dans le message assistant
 
-协议间工具调用的核心挑战在于格式差异。Moon Bridge 的 `CoreTool` / `CoreContentBlock` 作为中间表示屏蔽差异：
+### Injection d'outil Web Search
 
-- **Anthropic** → `tool_use` / `tool_result` content blocks
-- **OpenAI Response** → `function_call` / `function_call_output` items
-- **OpenAI Chat** → `tool_calls` / `tool` role messages
-- **Google Gemini** → `functionCall` / `functionResponse` parts
+`InjectWebSearchTool` (défini dans `internal/service/server/server.go`) injecte dynamiquement l'outil `web_search` dans les requêtes en mode Transform. Supporte quatre modes : `auto` / `enabled` / `disabled` / `injected`. La recherche par injection est implémentée dans `adapter_dispatch.go` via `websearchinjected.WrapProvider()` pour une orchestration automatique.
 
-### Web Search 工具注入
+## Système de cache
 
-`InjectWebSearchTool`（定义在 `internal/service/server/server.go`）在 Transform 模式下动态注入 `web_search` 工具到请求中。支持 `auto` / `enabled` / `disabled` / `injected` 四种模式。注入式搜索在 `adapter_dispatch.go` 中通过 `websearchinjected.WrapProvider()` 包装上游 Provider 实现自动编排。
+Implémenté via `internal/protocol/cache` pour le cache prompt de l'API Anthropic Messages. Supporte quatre modes : `off` / `explicit` / `automatic` / `hybrid`, avec configuration du TTL, du nombre minimum de tokens de cache, de la limite de breakpoints, etc.
 
-## 缓存系统
+## Système de traçage des requêtes
 
-通过 `internal/protocol/cache` 实现 Anthropic Messages API 的 prompt 缓存。支持 `off` / `explicit` / `automatic` / `hybrid` 四种模式，可配置 TTL、最小缓存 token 数、breakpoint 上限等。
+Le traçage est implémenté via `internal/service/trace` et `internal/service/server/trace`. Les fichiers de trace sont organisés par `session/nom_modèle/catégorie/numéro.json`, chaque enregistrement contient les données complètes de requête/réponse, supportant trois catégories : Chat, Response, Anthropic.
 
-## 请求跟踪系统
+## API de gestion
 
-请求跟踪通过 `internal/service/trace` 和 `internal/service/server/trace` 实现。跟踪文件按 `session/模型名/类别/序号.json` 组织，每条记录包含完整请求/响应数据，支持 Chat、Response、Anthropic 三个分类目录。
+Quand `persistence.active_provider` est activé (SQLite ou D1), l'API de gestion est disponible sous `/api/v1/` (routage dans `internal/service/api/router.go`) :
 
-## 管理 API
+| Point d'accès | Méthode | Fonction |
+|---------------|---------|----------|
+| `/api/v1/config` | GET/PUT | Obtenir/mettre à jour la configuration runtime |
+| `/api/v1/models` | GET | Lister les définitions de modèles dans la configuration |
+| `/api/v1/models/{slug}` | GET/PUT/DELETE | Gérer une définition de modèle |
+| `/api/v1/providers` | GET/POST/DELETE | Gérer les fournisseurs |
+| `/api/v1/providers/{key}/offers/{model}` | PATCH/DELETE | Gérer les offres de modèles d'un fournisseur |
 
-当 `persistence.active_provider` 启用时（SQLite 或 D1），管理 API 在 `/api/v1/` 下可用（路由在 `internal/service/api/router.go`）：
+De plus, l'activation de l'extension metrics enregistre le point d'accès `/v1/admin/metrics` pour l'interrogation des métriques de requêtes.
 
-| 端点 | 方法 | 功能 |
-|------|------|------|
-| `/api/v1/config` | GET/PUT | 获取/更新运行时配置 |
-| `/api/v1/models` | GET | 列出配置中的模型定义 |
-| `/api/v1/models/{slug}` | GET/PUT/DELETE | 管理模型定义 |
-| `/api/v1/providers` | GET/POST/DELETE | 管理 Provider |
-| `/api/v1/providers/{key}/offers/{model}` | PATCH/DELETE | 管理 Provider 模型报价 |
-
-此外，启用 metrics extension 后会注册 `/v1/admin/metrics` 端点提供请求指标查询。
-
-Codex TOML 配置通过 CLI 标志 `-print-codex-config <model>` 生成，非 API 端点。
+La configuration Codex TOML est générée via le flag CLI `-print-codex-config <model>`, ce n'est pas un point d'accès API.

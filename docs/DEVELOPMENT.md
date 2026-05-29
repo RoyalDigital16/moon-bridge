@@ -1,110 +1,108 @@
-# Development
+# Guide de développement
 
-## 前置要求
+## Prérequis
 
 - Go 1.25+
-- 上游 LLM Provider API Key（可选，用于 E2E 测试）
+- Clé API d'un fournisseur LLM amont (optionnelle, pour les tests E2E)
 
-## 项目结构
+## Structure du projet
 
 ```
 cmd/
-  moonbridge/    # 主入口（二进制）
-  cloudflare/    # Cloudflare Worker 入口
-
+  moonbridge/    # Point d'entrée principal (binaire)
+  cloudflare/    # Point d'entrée Cloudflare Worker
 internal/
-  e2e/                    # 端到端集成测试（协议转换）
-  extension/              # 可插拔扩展
-    codex/                # Codex 模型目录
-    db/                   # 数据库 Provider（SQLite / D1）
-    deepseek_v4/          # DeepSeek V4 推理优化
-    kimi_workaround/      # Kimi 模型 Tool Call 轮次限制
-    metrics/              # 用量指标
-    plugin/               # Plugin 接口与注册表
-    visual/               # 视觉模型分发（CoreProvider 模式）
-    websearch/            # Web Search 编排器
-    websearchinjected/    # Web Search 注入模式
-  config/                 # YAML 配置加载与校验
-  logger/                 # 日志系统（slog 封装）
-  openai_dto/             # 共享 OpenAI DTO 类型
-  modelref/               # 模型引用解析
-  session/                # 会话管理
-  db/                     # 数据库抽象与注册表
-  format/                 # Core 类型 + Adapter 接口 + Registry
-  protocol/               # 协议转换层
-    anthropic/            # Anthropic Messages Adapter
-    cache/                # Prompt 缓存规划
-    chat/                 # OpenAI Chat Adapter
-    google/               # Google Gemini (GenAI) Adapter
-    openai/               # OpenAI Responses Adapter
-  service/                # 业务编排层
-    api/                  # 管理 REST API（路由在 router.go）
-    app/                  # 应用生命周期 + Extension 目录
-    bridge/               # （空目录，预留）
-    e2e/                  # 服务层 E2E 测试
-    provider/             # Provider 管理器
-    proxy/                # Capture 模式代理
-    runtime/              # 运行时上下文
-    server/               # HTTP 服务器 + 路由 + 认证
-    stats/                # 用量统计
-    store/                # 配置持久化
-    trace/                # 请求跟踪
+  e2e/                    # Tests d'intégration de bout en bout (conversion de protocole)
+  extension/              # Extensions enfichables
+    codex/                # Catalogue de modèles Codex
+    db/                   # Fournisseurs de base de données (SQLite / D1)
+    deepseek_v4/          # Optimisation d'inférence DeepSeek V4
+    kimi_workaround/      # Limitation des tours d'appels d'outils Kimi
+    metrics/              # Métriques d'utilisation
+    plugin/               # Interface et registre des plugins
+    visual/               # Distribution de modèles visuels (mode CoreProvider)
+    websearch/            # Orchestrateur Web Search
+    websearchinjected/    # Mode injection Web Search
+  config/                 # Chargement et validation de configuration YAML
+  logger/                 # Système de journalisation (encapsulation slog)
+  openai_dto/             # Types DTO OpenAI partagés
+  modelref/               # Résolution de références de modèle
+  session/                # Gestion de session
+  db/                     # Abstraction et registre de base de données
+  format/                 # Types Core + interface Adapter + Registry
+  protocol/               # Couche de conversion de protocole
+    anthropic/            # Adaptateur Anthropic Messages
+    openai/               # Adaptateur OpenAI Responses
+    google/               # Adaptateur Google Gemini/GenAI
+    chat/                 # Adaptateur OpenAI Chat
+    cache/                # Planification du cache Prompt
+  service/                # Couche d'orchestration métier
+    api/                  # API REST de gestion (routage dans router.go)
+    app/                  # Cycle de vie de l'application + répertoire d'extensions
+    bridge/               # (Répertoire vide, réservé)
+    e2e/                  # Tests E2E de la couche service
+    provider/             # Gestionnaire de fournisseurs
+    proxy/                # Proxy en mode Capture
+    runtime/              # Contexte d'exécution
+    server/               # Serveur HTTP + routage + authentification
+    stats/                # Statistiques d'utilisation
+    store/                # Persistance de configuration
+    trace/                # Traçage des requêtes
 ```
 
-## 构建
+## Construction
 
 ```bash
-# 构建二进制
+# Construire le binaire
 go build -o moonbridge ./cmd/moonbridge
 
-# 构建 Cloudflare Worker（WASM）
-go build -o worker.wasm ./cmd/cloudflare
+# Construire le Cloudflare Worker (WASM)
+GOOS=wasip1 GOARCH=wasm go build -o build/cloudflare.wasm ./cmd/cloudflare
 ```
 
-## 运行
+## Exécution
 
 ```bash
 go run ./cmd/moonbridge -config config.yml
 ```
 
-支持热重载：修改配置后通过管理 API 或重启应用应用更改。
+Support du rechargement à chaud : après modification de la configuration, appliquez les changements via l'API de gestion ou redémarrez l'application.
 
-## 常用命令
+## Commandes courantes
 
 ```bash
-# 全量单元测试
+# Tests unitaires complets
 go test ./...
 
-# 包级别测试
+# Tests au niveau d'un package
 go test ./internal/protocol/anthropic/...
 
-# E2E 测试（Mock 模式，无需 API Key）
-go test ./internal/e2e/... -v -count=1
+# Tests E2E (mode Mock, sans clé API)
+go test ./internal/e2e/ -mock
 
-# 特定 Provider 的 E2E 测试
-cd internal/e2e && PROVIDER=deepseek go test -v -count=1 -run TestAnthropicE2E
-cd internal/e2e && PROVIDER=gemini go test -v -count=1 -run TestGoogleGenAIE2E
+# Tests E2E pour un fournisseur spécifique
+go test ./internal/e2e/ -run TestDeepSeek -v
 
-# 使用 Makefile 构建与测试
+# Utiliser le Makefile pour construire et tester
 make build
 make test
 ```
 
-## 添加新 Provider Adapter
+## Ajouter un nouvel adaptateur fournisseur
 
-1. 在 `internal/config/config.go` 中添加协议常量（如 `ProtocolMyAdapter`）
-2. 创建 `internal/protocol/<adapter>/` 包，实现 `internal/format/adapter.go` 中的 `ProviderAdapter` 和 `ProviderStreamAdapter` 接口
-3. 在 `internal/service/app/app.go` 中注册 Adapter 到 Registry
-4. 在 `internal/service/server/adapter_dispatch.go` 中添加协议分支
-5. 添加对应的 E2E 测试到 `internal/e2e/`
+1. Ajoutez une constante de protocole dans `internal/config/config.go` (ex: `ProtocolMyAdapter`)
+2. Créez le package `internal/protocol/<adapter>/` implémentant les interfaces `ProviderAdapter` et `ProviderStreamAdapter` de `internal/format/adapter.go`
+3. Enregistrez l'adaptateur dans le Registry via `internal/service/app/app.go`
+4. Ajoutez une branche de protocole dans `internal/service/server/adapter_dispatch.go`
+5. Ajoutez des tests E2E correspondants dans `internal/e2e/`
 
-## 管理 API 开发
+## Développement de l'API de gestion
 
-管理 API 端点定义在 `internal/service/api/` 中，通过 `NewRouter` 创建路由（`router.go`）。
+Les points d'accès de l'API de gestion sont définis dans `internal/service/api/`, le routage est créé via `NewRouter` (`router.go`).
 
-## 代码约定
+## Conventions de code
 
-- 文件名反映其职责（如 `candidate_routing_test.go`），不使用项目管理编号
-- 使用 `log/slog` 进行结构化日志
-- 包级配置通过 `internal/config` 统一管理
-- 协议转换统一使用 `internal/format` 中的 `CoreRequest` / `CoreResponse` 作为中间表示
+- Les noms de fichiers reflètent leur responsabilité (ex: `candidate_routing_test.go`), pas de numéros de gestion de projet
+- Utilisez `log/slog` pour la journalisation structurée
+- La configuration au niveau package est gérée via `internal/config`
+- La conversion de protocole utilise `CoreRequest` / `CoreResponse` de `internal/format` comme représentation intermédiaire

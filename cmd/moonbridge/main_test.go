@@ -81,10 +81,10 @@ routes:
 	}
 	output := stderr.String()
 	for _, want := range []string{
-		"Moon Bridge 启动失败：配置文件加载失败",
-		"配置文件: " + configPath,
+		"Échec du démarrage de Moon Bridge : chargement de la configuration échoué",
+		"Fichier de configuration : " + configPath,
 		"providers.openai.protocol must be \"anthropic\", \"openai-response\", \"google-genai\", or \"openai-chat\"",
-		"Responses 直通请使用 openai-response",
+		"Pour le passage direct Responses, utilisez openai-response",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("stderr missing %q:\n%s", want, output)
