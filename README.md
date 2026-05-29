@@ -9,14 +9,16 @@ Moon Bridge est un proxy de conversion de protocole et de routage de modèles é
 ## Démarrage rapide
 
 ```bash
-# Copier et éditer la configuration
-cp config.example.yml config.yml
-# Modifier api_key dans config.yml
+# 1. Éditer la configuration (déjà présente : config.yml)
+#    → Remplacer les clés API (voir tableau plus bas)
 
-# Démarrer
+# 2. Démarrer Moon Bridge
 go run ./cmd/moonbridge -config config.yml
 
-# Voir CookBook.md pour les scénarios d'utilisation détaillés
+# 3. Tester avec curl
+curl -X POST http://127.0.0.1:38440/v1/responses \
+  -H "Content-Type: application/json" \
+  -d '{"model": "moonbridge", "input": "Bonjour !"}'
 ```
 
 Nécessite Go 1.25+.
@@ -44,22 +46,70 @@ Nécessite Go 1.25+.
 
 Au format YAML, structure centrale en trois sections : `models`, `providers`, `routes`. Voir [CONFIGURATION.md](docs/CONFIGURATION.md) pour la documentation complète.
 
-## Utilisation avec Codex CLI
+### Fournisseurs configurés
 
-Définissez l'adresse Moon Bridge comme URL de base de l'API OpenAI de Codex :
+Moon Bridge supporte actuellement **5 fournisseurs** dans `config.yml` :
 
-```toml
-[openai]
-base_url = "http://127.0.0.1:38440/v1"
-api_key = "any-non-empty-value"
+| Fournisseur | Protocole | URL | Modèles |
+|---|---|---|---|
+| **deepseek** | Anthropic | `api.deepseek.com/anthropic` | DeepSeek V4 Pro, DeepSeek V4 Flash |
+| **opencode-go** | OpenAI Chat | `opencode.ai/zen/go` | GLM 5.1, GLM 5, Kimi K2.5/K2.6, MiMo V2.5/Pro, DeepSeek V4 Pro/Flash |
+| **opencode-go-anthropic** | Anthropic | `opencode.ai/zen/go` | MiniMax M2.7/M2.5, Qwen3.7 Max/3.6 Plus |
+| **openrouter** | OpenAI Chat | `openrouter.ai/api/v1` | GPT-4o, Claude Opus 4, Gemini 2.5 Pro, DeepSeek Chat |
+| **ollama** *(local)* | OpenAI Chat | `localhost:11434` | Llama 3.3, DeepSeek R1, Qwen 2.5, Mistral |
+
+→ Les modèles `deepseek-v4-pro` et `deepseek-v4-flash` sont partagés entre les fournisseurs **deepseek** et **opencode-go** via leurs offres respectives.
+
+### 🔑 Clés API à modifier
+
+Avant de pouvoir utiliser Moon Bridge, remplacez les clés API fictives dans `config.yml` par vos vraies clés :
+
+| Clé à remplacer | Obtenir la clé | Fournisseur concerné |
+|---|---|---|
+| `replace-with-deepseek-api-key` | [platform.deepseek.com](https://platform.deepseek.com) | deepseek |
+| `replace-with-opencode-go-api-key` | [opencode.ai/auth](https://opencode.ai/auth) (abonnement Go) | opencode-go, opencode-go-anthropic |
+| `replace-with-openrouter-api-key` | [openrouter.ai](https://openrouter.ai) | openrouter |
+
+> **Ollama** ne nécessite pas de clé API : le champ `api_key` est défini à `ollama` (valeur factice requise par la validation).
+
+### Routes disponibles
+
+```bash
+# Modèle par défaut : DeepSeek V4 Pro (route "moonbridge")
+curl -X POST http://127.0.0.1:38440/v1/responses \
+  -H "Content-Type: application/json" \
+  -d '{"model": "moonbridge", "input": "Bonjour !"}'
+
+# OpenRouter — GPT-4o
+curl -X POST http://127.0.0.1:38440/v1/responses \
+  -H "Content-Type: application/json" \
+  -d '{"model": "openrouter-gpt-4o", "input": "Bonjour !"}'
+
+# Ollama local — Llama 3.3
+curl -X POST http://127.0.0.1:38440/v1/responses \
+  -H "Content-Type: application/json" \
+  -d '{"model": "ollama-llama3.3", "input": "Bonjour !"}'
 ```
 
-Puis définissez dans la configuration Moon Bridge des routes portant le même nom que les modèles Codex.
+Toutes les routes disponibles sont listées dans la section `routes` de `config.yml`.
+
+## Utilisation avec Codex CLI
+
+```bash
+# Générer la configuration Codex pour le modèle par défaut
+go run ./cmd/moonbridge -config config.yml -print-codex-config moonbridge -codex-home ~/.config/codex
+
+# Ou définir manuellement l'URL de base
+export CODEX__OPENAI__BASE_URL="http://127.0.0.1:38440/v1"
+export CODEX__OPENAI__API_KEY="any-non-empty-value"
+```
+
+Puis démarrez Codex CLI, il utilisera Moon Bridge comme proxy pour accéder aux modèles configurés.
 
 ## Utilisation avec Claude Code
 
 ```bash
-claude --model your-alias --api-url http://127.0.0.1:38440 --api-key any-value
+claude --model moonbridge --api-url http://127.0.0.1:38440 --api-key any-value
 ```
 
 ## Déploiement Docker
